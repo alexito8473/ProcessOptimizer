@@ -1,0 +1,21 @@
+
+[Setup]
+AppName=ProcessOptimizer
+AppVersion=1.0.0
+DefaultDirName={autopf}\ProcessOptimizer
+OutputDir=Output
+OutputBaseFilename=ProcessOptimizer-Setup
+ArchitecturesInstallIn64BitMode=x64
+Compression=lzma
+SolidCompression=yes
+
+[Files]
+Source: "..\x64\Release\ProcessOptimizer.exe"; DestDir: "{app}"
+Source: "vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+
+[Icons]
+Name: "{autoprograms}\ProcessOptimizer"; Filename: "{app}\ProcessOptimizer.exe"
+
+[Run]
+Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; Flags: waituntilterminated
+Filename: "{app}\ProcessOptimizer.exe"; Description: "Iniciar ProcessOptimizer"; Flags: postinstall nowait skipifsilent

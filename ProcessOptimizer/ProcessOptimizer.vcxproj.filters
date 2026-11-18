@@ -1,0 +1,62 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{d66fbd32-4b0a-43f3-bd6e-79bf6e9884b4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\Core">
+      <UniqueIdentifier>{b4b3740e-f264-4b08-84d9-c664dbc94921}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\Process">
+      <UniqueIdentifier>{5e0ef2ad-fffe-4a8c-89be-8952f9feb2e1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\Monitoring">
+      <UniqueIdentifier>{7e59dcca-81d2-46ce-8738-512b7d3bf86f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\Optimization">
+      <UniqueIdentifier>{8f30f909-77db-46a4-a352-28c938c1786b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\UI">
+      <UniqueIdentifier>{483cc461-84a0-450a-a5af-46922b029aca}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\Service">
+      <UniqueIdentifier>{08c07c9a-6935-49e8-ad12-c4b763ee2488}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\Communication">
+      <UniqueIdentifier>{71a70b8d-855c-4bdd-b72a-c6bb4f84ef91}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include">
+      <UniqueIdentifier>{5a5a260c-ba0f-4abf-949c-6f7e8b042804}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="assets">
+      <UniqueIdentifier>{db7209a7-7c57-4c19-87d8-f6bfd22ff68c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="docs">
+      <UniqueIdentifier>{d26b837e-9669-4d27-a9d6-6ce5b5441e59}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="tests">
+      <UniqueIdentifier>{77ccd806-db00-44fe-a337-fa23bba7af0c}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="src\UI\Windows\Window.cpp" />
+    <ClCompile Include="src\Monitoring\CpuMonitor\CpuMonitor.cpp" />
+    <ClCompile Include="src\Monitoring\SystemMonitor\SystemMonitor.cpp" />
+    <ClCompile Include="src\UI\Rendering\ImGuiRenderer.cpp" />
+    <ClCompile Include="src\UI\Components\Charts\Chart.cpp" />
+    <ClCompile Include="src\UI\Screens\Cpu\CpuDashboard.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\UI\Windows\Window.h" />
+    <ClInclude Include="src\Monitoring\CpuMonitor\CpuMonitor.h" />
+    <ClInclude Include="src\Monitoring\SystemMonitor\SystemMonitor.h" />
+    <ClInclude Include="src\Core\Events\Event.h" />
+    <ClInclude Include="src\Core\Events\EventSystem.h" />
+    <ClInclude Include="src\Core\Events\IEvent.h" />
+    <ClInclude Include="src\Monitoring\CpuMonitor\CpuInfo.h" />
+    <ClInclude Include="src\UI\Rendering\ImGuiRenderer.h" />
+    <ClInclude Include="src\UI\Components\Charts\Chart.h" />
+    <ClInclude Include="src\UI\Screens\Cpu\CpuDashboard.h" />
+  </ItemGroup>
+</Project>
