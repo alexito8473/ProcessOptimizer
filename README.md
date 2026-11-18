@@ -1,294 +1,193 @@
-\# ProcessOptimizer
 
+<div align="center">
 
+# ⚡ ProcessOptimizer
 
-<p align="center">
+### Una herramienta moderna de monitorización y optimización para Windows.
 
-&#x20; <strong>A native Windows system monitoring and optimization application.</strong>
+Monitoriza tu hardware. Comprende tu sistema. Controla su rendimiento.
 
-</p>
+<br/>
 
+![C++20](https://img.shields.io/badge/C++-20-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)
+![Windows 11](https://img.shields.io/badge/Plataforma-Windows%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![DirectX 11](https://img.shields.io/badge/Gráficos-DirectX%2011-0078D6?style=for-the-badge)
+![Desarrollo](https://img.shields.io/badge/Estado-En%20desarrollo-orange?style=for-the-badge)
 
+<br/>
 
-<p align="center">
+</div>
 
-&#x20; Built with C++20 · Windows 11 · DirectX 11 · Dear ImGui
+---
 
-</p>
+## 🖥️ Sobre el proyecto
 
+**ProcessOptimizer** es una aplicación nativa para Windows diseñada para ofrecer una visión detallada y en tiempo real del hardware y del rendimiento del ordenador.
 
+El objetivo es desarrollar una herramienta de monitorización moderna, ligera y completa que reúna estadísticas del hardware, gráficos de rendimiento y gestión de procesos en una única aplicación.
 
-\---
+Desarrollada en **C++20**, ProcessOptimizer prioriza el rendimiento, la eficiencia y una arquitectura modular.
 
+---
 
+## 🎯 Objetivos del proyecto
 
-\## Overview
+- 📊 Monitorización del rendimiento del sistema en tiempo real.
+- ⚙️ Información detallada del hardware.
+- 🧠 Monitorización del procesador y sus núcleos lógicos.
+- 📈 Gráficos de rendimiento e historial de actividad.
+- 🖥️ Interfaz de escritorio moderna e intuitiva.
+- 🚀 Bajo consumo de recursos.
+- 🔧 Incorporación progresiva de herramientas de optimización.
 
+---
 
+## ✨ Funcionalidades
 
-\*\*ProcessOptimizer\*\* is a native Windows application designed to provide users with a clear, detailed and real-time view of their computer's performance.
+### 🧠 Monitorización de CPU
 
+- Uso total del procesador en tiempo real.
+- Uso individual de cada procesador lógico.
+- Detección de núcleos físicos y procesadores lógicos.
+- Información sobre topología y sockets.
+- Frecuencia estimada del procesador.
+- Información de los distintos niveles de caché.
+- Detección de virtualización por hardware.
+- Estadísticas de actividad del sistema.
+- Gráficas históricas de rendimiento.
 
+### 🎨 Interfaz gráfica
 
-The goal is to build a lightweight and modern system monitoring tool that brings essential hardware information, resource usage and process management together in one interface.
+- Aplicación nativa para Windows.
+- Interfaz moderna con tema oscuro.
+- Panel principal de rendimiento.
+- Gráficas en tiempo real.
+- Monitorización individual de procesadores.
+- Componentes visuales modulares.
 
+---
 
+## 🛠️ Tecnologías utilizadas
 
-The project is being developed in \*\*C++20\*\*, with a focus on performance, low resource consumption, modular architecture and a responsive user interface.
+| Tecnología | Utilización |
+|:---|:---|
+| **C++20** | Desarrollo de la aplicación |
+| **Win32 API** | Integración nativa con Windows |
+| **DirectX 11** | Renderizado gráfico |
+| **Dear ImGui** | Interfaz de usuario |
+| **ImPlot** | Visualización de estadísticas |
+| **Windows PDH** | Contadores de rendimiento |
+| **Windows API** | Obtención de información del hardware |
+| **vcpkg** | Gestión de dependencias |
+| **Visual Studio 2022** | Entorno de desarrollo |
 
+---
 
+## 🗺️ Hoja de ruta
 
-\## Goals
+El proyecto se encuentra en desarrollo. Estas son las principales funcionalidades previstas:
 
+| Módulo | Estado |
+|:---|:---|
+| Monitorización de CPU | 🟢 En desarrollo |
+| Panel de CPU | 🟢 En desarrollo |
+| Monitorización de memoria RAM | ⚪ Planificado |
+| Monitorización de GPU | ⚪ Planificado |
+| Administrador de procesos | ⚪ Planificado |
+| Optimización del sistema | ⚪ Planificado |
+| Configuración de la aplicación | ⚪ Planificado |
 
+---
 
-ProcessOptimizer aims to make system monitoring more accessible while providing detailed information for users who want to understand how their hardware and processes behave.
+## 🏗️ Arquitectura del proyecto
 
+ProcessOptimizer utiliza una arquitectura modular que separa la monitorización, la comunicación mediante eventos y la representación de la interfaz gráfica.
 
+```text
+ProcessOptimizer/
+│
+├── Core/
+│   └── Events/
+│
+├── Monitoring/
+│   ├── CpuMonitor/
+│   └── SystemMonitor/
+│
+├── UI/
+│   ├── Windows/
+│   ├── Dashboard/
+│   │   └── Cpu/
+│   └── Components/
+│       └── Charts/
+│
+└── ProcessOptimizer.sln
+```
 
-Key goals:
+La capa de monitorización recopila información del sistema y publica actualizaciones mediante un sistema de eventos. La interfaz recibe estos datos y los representa de forma independiente.
 
+Esta separación facilita el mantenimiento y la incorporación de nuevos módulos.
 
+---
 
-\- Monitor system performance in real time.
+## 🚀 Instalación y compilación
 
-\- Display detailed CPU and hardware information.
+### Requisitos
 
-\- Track individual logical processor utilization.
+- Windows 11 (64 bits).
+- Visual Studio 2022.
+- Compilador compatible con C++20.
+- Windows SDK.
+- Gestor de paquetes vcpkg.
 
-\- Provide clear performance graphs and historical data.
+### Instalación de dependencias
 
-\- Offer a clean, modern and intuitive interface.
-
-\- Keep resource consumption as low as possible.
-
-\- Build a foundation for future system optimization tools.
-
-
-
-\## Current Features
-
-
-
-\### CPU Monitoring
-
-
-
-\- Real-time total CPU utilization.
-
-\- Individual logical processor usage.
-
-\- Physical and logical processor detection.
-
-\- Processor topology and socket information.
-
-\- Estimated CPU frequency and performance information.
-
-\- CPU cache information.
-
-\- Hardware virtualization status.
-
-\- System activity statistics.
-
-\- Historical CPU performance graphs.
-
-
-
-\### User Interface
-
-
-
-\- Native Windows desktop application.
-
-\- Dark interface with a modern visual style.
-
-\- Dashboard with performance summary cards.
-
-\- Real-time charts and processor monitoring.
-
-\- Modular UI architecture.
-
-
-
-\## Planned Features
-
-
-
-The project is under active development. The following areas are planned:
-
-
-
-\- \*\*Memory:\*\* RAM usage, capacity and performance monitoring.
-
-\- \*\*GPU:\*\* Graphics card utilization, memory and temperature monitoring where supported.
-
-\- \*\*Processes:\*\* Process inspection, resource usage and process management.
-
-\- \*\*Optimization:\*\* Tools to help users understand and manage system resource consumption.
-
-\- \*\*Settings:\*\* Application preferences and customization.
-
-
-
-\## Technology Stack
-
-
-
-| Technology | Purpose |
-
-|---|---|
-
-| C++20 | Core application |
-
-| Win32 API | Native Windows integration |
-
-| DirectX 11 | Graphics rendering |
-
-| Dear ImGui | User interface |
-
-| ImPlot | Performance charts |
-
-| Windows PDH | Performance monitoring |
-
-| Windows API | Hardware and system information |
-
-| vcpkg | Dependency management |
-
-| Visual Studio 2022 | Development environment |
-
-
-
-\## Architecture
-
-
-
-The application follows a modular architecture designed to separate system monitoring, event communication and presentation.
-
-
-
-Main components:
-
-
-
-\- \*\*Core:\*\* Shared infrastructure and event system.
-
-\- \*\*Monitoring:\*\* Hardware and system monitoring modules.
-
-\- \*\*UI:\*\* Application window, dashboard and interface components.
-
-\- \*\*Components:\*\* Reusable UI elements such as charts.
-
-
-
-The monitoring layer collects system information and publishes updates through an event system. The UI consumes these updates and renders the information independently.
-
-
-
-\## Requirements
-
-
-
-To build ProcessOptimizer from source:
-
-
-
-\- Windows 11 (x64).
-
-\- Visual Studio 2022.
-
-\- C++20 compatible compiler.
-
-\- Windows SDK.
-
-\- vcpkg package manager.
-
-
-
-\### Dependencies
-
-
-
-Install the required libraries using vcpkg:
-
-
+Instala las bibliotecas necesarias mediante vcpkg:
 
 ```powershell
-
-vcpkg install "imgui\[win32-binding,dx11-binding]:x64-windows"
-
+vcpkg install "imgui[win32-binding,dx11-binding]:x64-windows"
 vcpkg install implot:x64-windows
-
 ```
 
+### Compilar el proyecto
 
-
-\## Building
-
-
-
-1\. Clone the repository:
-
-
+**1. Clonar el repositorio**
 
 ```bash
-
 git clone https://github.com/alexito8473/ProcessOptimizer.git
-
 ```
 
+**2. Abrir la solución**
 
+Abre `ProcessOptimizer.sln` con Visual Studio 2022.
 
-2\. Open the Visual Studio solution.
+**3. Configurar la compilación**
 
+Selecciona:
 
+- Configuración: `Release`
+- Plataforma: `x64`
 
-3\. Configure the project for \*\*x64\*\*.
+**4. Compilar**
 
+Compila la solución desde Visual Studio.
 
+---
 
-4\. Select the \*\*Release\*\* configuration.
+## 🔮 Visión del proyecto
 
+El objetivo a largo plazo de ProcessOptimizer es convertirse en una herramienta completa para comprender, monitorizar y gestionar el rendimiento de los equipos Windows.
 
+Desde la monitorización del hardware hasta la gestión de procesos y la optimización del sistema, todo estará centralizado en una aplicación ligera, intuitiva y eficiente.
 
-5\. Build the solution.
+---
 
+<div align="center">
 
+### ⚡ ProcessOptimizer
 
-\## Project Status
+**Desarrollado con C++20. Diseñado para Windows.**
 
+[Ver repositorio en GitHub](https://github.com/alexito8473/ProcessOptimizer)
 
-
-<code>In Development</code>
-
-
-
-ProcessOptimizer is an ongoing development project. The CPU monitoring foundation and initial dashboard are being implemented, while additional monitoring modules and optimization capabilities are planned.
-
-
-
-Features and architecture may evolve as development progresses.
-
-
-
-\## Vision
-
-
-
-The long-term vision is to create a lightweight, reliable and comprehensive Windows utility that helps users understand their computer, monitor its resources and make informed decisions about system performance.
-
-
-
-\---
-
-
-
-<p align="center">
-
-&#x20; <strong>ProcessOptimizer</strong><br/>
-
-&#x20; Built with C++20 for Windows.
-
-</p>
-
-
+</div>
 
