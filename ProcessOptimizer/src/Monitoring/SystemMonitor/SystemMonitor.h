@@ -3,7 +3,8 @@
 
 #include "../../Core/Events/EventSystem.h"
 #include "../CpuMonitor/CpuMonitor.h"
-
+#include "../MemoryMonitor/MemoryMonitor.h"
+#include "../GpuMonitor/GpuMonitor.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -26,14 +27,18 @@ private:
     void MonitorLoop();
 
     EventSystem& events_;
-    CpuMonitor cpuMonitor_;
 
+    CpuMonitor cpuMonitor_;
+    MemoryMonitor memoryMonitor_;
+    GpuMonitor gpuMonitor_;
     std::thread monitorThread_;
 
     std::atomic<bool> running_{ false };
 
     const std::chrono::milliseconds updateInterval_{ 1000 };
-
+    void UpdateCpuMonitor();
+	void UpdateMemoryMonitor();
+    void UpdateGpuMonitor();
     std::mutex lifecycleMutex_;
     std::mutex stopMutex_;
     std::condition_variable stopCondition_;

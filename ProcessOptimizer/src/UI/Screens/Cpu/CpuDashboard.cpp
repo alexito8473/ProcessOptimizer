@@ -344,9 +344,7 @@ namespace UI::Dashboard::Cpu
 
             UI::Components::Chart::Render(
                 config,
-                std::span<const UI::Components::ChartSeries>(
-                    &series,
-                    1));
+                std::span<const UI::Components::ChartSeries>(&series,1), true);
 
             ImGui::Spacing();
         }
@@ -627,7 +625,7 @@ namespace UI::Dashboard::Cpu
 
             ImGui::BeginChild(
                 "CpuHardwareInformation",
-                ImVec2(0.0f, 0.0f),
+                ImVec2(0.0f, 500.0f),
                 true);
 
             RenderTopology(snapshot);
@@ -707,9 +705,7 @@ namespace UI::Dashboard::Cpu
 
             UI::Components::Chart::Render(
                 config,
-                std::span<const UI::Components::ChartSeries>(
-                    &series,
-                    1));
+                std::span<const UI::Components::ChartSeries>(&series, 1), false);
         }
 
         // ========================================================
@@ -876,7 +872,7 @@ namespace UI::Dashboard::Cpu
         {
             ImGui::BeginChild(
                 "LogicalProcessorsPanel",
-                ImVec2(0.0f, 0.0f),
+                ImVec2(0.0f, 500.0f),
                 true);
 
             RenderLogicalProcessors(

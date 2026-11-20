@@ -7,7 +7,7 @@
 #include "../../../Monitoring/CpuMonitor/CpuInfo.h"
 #include <atomic>
 #include <mutex>
-static constexpr std::size_t HistorySize = 120;
+static constexpr std::size_t HistorySize = 300;
 
 // Historial individual de cada procesador lógico.
 // Lo utiliza Window para almacenar muestras y CpuDashboard para dibujarlas.

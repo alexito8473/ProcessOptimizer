@@ -13,7 +13,9 @@
 #include "../Screens/Cpu/CpuDashboard.h"
 #include "../../Core/Events/EventSystem.h"
 #include "../../Monitoring/SystemMonitor/SystemMonitor.h"
-
+#include "../../Monitoring/MemoryMonitor/MemoryInfo.h"
+#include "../Screens/Gpu/GpuDashboard.h"
+#include "../Screens/Gpu/GpuDashboard.h"
 class Window
 {
 public:
@@ -61,6 +63,8 @@ private:
 
     // Events
     std::size_t cpuSubscriptionId_ = 0;
+    std::size_t memorySubscriptionId_ = 0;
+    std::size_t gpuSubscriptionId_ = 0;
     bool subscribed_ = false;
 
     // Monitoring
@@ -81,4 +85,22 @@ private:
         SharedState& state,
         const CpuSnapshot& snapshot
     );
+
+    MemorySnapshot memorySnapshot_{};
+
+    std::array<float, HistorySize> memoryHistory_{};
+    std::size_t memoryHistoryIndex_ = 0;
+    std::size_t memoryHistoryCount_ = 0;
+    bool hasMemorySnapshot_ = false;
+
+    // Memory history
+    void AddMemorySample(
+        float value
+    );
+    // GPU Dashboard
+    GpuSnapshot gpuSnapshot_{};
+    UI::Dashboard::Gpu::GpuDashboardHistory gpuHistory_{};
+    bool hasGpuSnapshot_ = false;
+
+    void AddGpuSample(const GpuSnapshot& snapshot);
 };

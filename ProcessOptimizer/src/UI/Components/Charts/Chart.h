@@ -15,13 +15,16 @@ namespace UI::Components
     };
 
     // Configuración general de la gráfica.
+
     struct ChartConfig
     {
         std::string title = "Chart";
         std::string xAxisLabel = "Samples";
         std::string yAxisLabel = "Value";
 
-        float height = 235.0f;
+        std::string unit = "%";
+
+        float height = 260.0f;
 
         bool lockXAxis = false;
         double xMin = 0.0;
@@ -30,14 +33,22 @@ namespace UI::Components
         bool lockYAxis = false;
         double yMin = 0.0;
         double yMax = 100.0;
+
+        bool showStatistics = true;
+        bool showLegend = false;
+        bool showGrid = true;
+        bool showCurrentValue = true;
+        bool showAverage = true;
     };
+
 
     class Chart
     {
     public:
         static void Render(
             const ChartConfig& config,
-            std::span<const ChartSeries> series
+            std::span<const ChartSeries> series,
+            bool activeAxes
         );
     };
 }

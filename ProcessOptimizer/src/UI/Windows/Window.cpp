@@ -13,8 +13,8 @@
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 #include "../Screens/Cpu/CpuDashboard.h"
-
-
+#include "../Screens/Memory/MemoryDashboard.h"
+#include "../Screens/Gpu/GpuDashboard.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND hwnd,
     UINT message,
@@ -165,6 +165,96 @@ void Window::AddCpuSample(
 }
 
 // ============================================================
+// MEMORY HISTORY
+// ============================================================
+
+void Window::AddMemorySample(float value)
+{
+    memoryHistory_[memoryHistoryIndex_] = value;
+
+    memoryHistoryIndex_ =
+        (memoryHistoryIndex_ + 1) % HistorySize;
+
+    if (memoryHistoryCount_ < HistorySize)
+        ++memoryHistoryCount_;
+}
+
+
+// ============================================================
+// GPU HISTORY
+// ============================================================
+
+void Window::AddGpuSample(const GpuSnapshot& snapshot)
+{
+    constexpr double BytesToMB = 1024.0 * 1024.0;
+
+    for (const auto& gpu : snapshot.gpus)
+    {
+        auto it = std::find_if(
+            gpuHistory_.adapters.begin(),
+            gpuHistory_.adapters.end(),
+            [&gpu](const UI::Dashboard::Gpu::GpuAdapterHistory& history)
+            {
+                return history.luidLowPart == gpu.luidLowPart &&
+                    history.luidHighPart == gpu.luidHighPart;
+            }
+        );
+
+        if (it == gpuHistory_.adapters.end())
+        {
+            gpuHistory_.adapters.emplace_back();
+
+            it = std::prev(gpuHistory_.adapters.end());
+
+            it->luidLowPart = gpu.luidLowPart;
+            it->luidHighPart = gpu.luidHighPart;
+        }
+
+        const std::size_t index = it->historyIndex;
+
+        it->usage[index] = static_cast<float>(gpu.usagePercent);
+        it->usage3D[index] = static_cast<float>(gpu.usage3D);
+        it->usageCopy[index] = static_cast<float>(gpu.usageCopy);
+        it->usageCompute[index] = static_cast<float>(gpu.usageCompute);
+        it->usageVideoDecode[index] = static_cast<float>(gpu.usageVideoDecode);
+        it->usageVideoEncode[index] = static_cast<float>(gpu.usageVideoEncode);
+        it->usageVideoProcessing[index] = static_cast<float>(gpu.usageVideoProcessing);
+
+        it->dedicatedMemory[index] = static_cast<float>(
+            gpu.processDedicatedMemoryUsedBytes / BytesToMB
+            );
+
+        it->sharedMemory[index] = static_cast<float>(
+            gpu.processSharedMemoryUsedBytes / BytesToMB
+            );
+
+        it->historyIndex = (it->historyIndex + 1) % UI::Dashboard::Gpu::GpuHistorySize;
+
+        if (it->historyCount < UI::Dashboard::Gpu::GpuHistorySize)
+            ++it->historyCount;
+
+#ifdef _DEBUG
+        std::ostringstream debug;
+
+        debug << std::fixed << std::setprecision(2);
+
+        debug << "[GPU HISTORY] "
+            << "GPU: " << gpu.index
+            << " | " << std::string(
+                gpu.name.begin(), gpu.name.end())
+            << " | Usage: " << gpu.usagePercent << "%"
+            << " | 3D: " << gpu.usage3D << "%"
+            << " | Copy: " << gpu.usageCopy << "%"
+            << " | Compute: " << gpu.usageCompute << "%"
+            << " | Index: " << it->historyIndex
+            << " | Count: " << it->historyCount
+            << "\n";
+
+        OutputDebugStringA(debug.str().c_str());
+#endif
+    }
+}
+// ============================================================
 // PROCESSOR HISTORIES
 // ============================================================
 
@@ -254,7 +344,60 @@ void Window::StartMonitoring()
             }
         }
     );
+    memorySubscriptionId_ = events_.Subscribe<MemorySnapshot>(
+        "MEMORY",
+        [this](const MemorySnapshot& snapshot)
+        {
+            {
+                std::lock_guard<std::mutex> lock(
+                    sharedState_->mutex
+                );
 
+                memorySnapshot_ = snapshot;
+                hasMemorySnapshot_ = true;
+
+                AddMemorySample(
+                    static_cast<float>(snapshot.usagePercent)
+                );
+            }
+
+            if (hwnd_)
+            {
+                PostMessageW(
+                    hwnd_,
+                    WM_DATA_UPDATED,
+                    0,
+                    0
+                );
+            }
+        }
+    );
+    gpuSubscriptionId_ = events_.Subscribe<GpuSnapshot>(
+        "GPU",
+        [this](const GpuSnapshot& snapshot)
+        {
+            {
+                std::lock_guard<std::mutex> lock(
+                    sharedState_->mutex
+                );
+
+                gpuSnapshot_ = snapshot;
+                hasGpuSnapshot_ = true;
+
+                AddGpuSample(snapshot);
+            }
+
+            if (hwnd_)
+            {
+                PostMessageW(
+                    hwnd_,
+                    WM_DATA_UPDATED,
+                    0,
+                    0
+                );
+            }
+        }
+    );
     subscribed_ = true;
 
     monitor_->Start();
@@ -279,6 +422,14 @@ void Window::StopMonitoring()
             cpuSubscriptionId_
         );
 
+        events_.Unsubscribe<MemorySnapshot>(
+            "MEMORY",
+            memorySubscriptionId_
+        );
+        events_.Unsubscribe<GpuSnapshot>(
+            "GPU",
+            gpuSubscriptionId_
+        );
         subscribed_ = false;
     }
 }
@@ -352,27 +503,47 @@ void Window::ApplyTheme()
 void Window::RenderDashboard()
 {
     CpuSnapshot snapshot{};
-
-    std::size_t cpuHistoryIndex;
-    std::array<float, HistorySize> cpuHistory{};
-
+    MemorySnapshot memorySnapshot{};
+    GpuSnapshot gpuSnapshot{};
+    UI::Dashboard::Gpu::GpuDashboardHistory gpuHistory{};
+    std::size_t cpuHistoryIndex = 0;
     std::size_t cpuHistoryCount = 0;
 
-    std::vector<ProcessorChartHistory>
-        processorHistories;
+    std::array<float, HistorySize> cpuHistory{};
 
+    std::vector<ProcessorChartHistory> processorHistories;
+
+    // RAM
+    std::array<float, HistorySize> memoryHistory{};
+    std::size_t memoryHistoryIndex = 0;
+    std::size_t memoryHistoryCount = 0;
+
+    bool hasMemorySnapshot = false;
+    bool hasGpuSnapshot = false;
     {
         std::lock_guard<std::mutex> lock(
             sharedState_->mutex
         );
 
+        // CPU
         snapshot = sharedState_->snapshot;
 
         cpuHistory = sharedState_->cpuHistory;
-
+        cpuHistoryIndex = sharedState_->historyIndex;
         cpuHistoryCount = sharedState_->historyCount;
 
-        processorHistories =   sharedState_->processorHistories;
+        processorHistories = sharedState_->processorHistories;
+
+        // RAM
+        memorySnapshot = memorySnapshot_;
+        memoryHistory = memoryHistory_;
+        memoryHistoryIndex = memoryHistoryIndex_;
+        memoryHistoryCount = memoryHistoryCount_;
+        hasMemorySnapshot = hasMemorySnapshot_;
+
+        gpuSnapshot = gpuSnapshot_;
+        gpuHistory = gpuHistory_;
+        hasGpuSnapshot = hasGpuSnapshot_;
     }
 
     const ImGuiViewport* viewport =
@@ -448,8 +619,6 @@ void Window::RenderDashboard()
         ImVec2(0, 0),
         false
     );
-    cpuHistoryIndex = sharedState_.get()->historyIndex;
-    cpuHistoryCount = sharedState_.get()->historyCount;
     switch (selectedPage_)
     {
     case 0:
@@ -470,17 +639,47 @@ void Window::RenderDashboard()
         break;
 
     case 2:
-        ImGui::Text("RAM");
-        ImGui::TextDisabled(
-            "Memory dashboard will be implemented here."
-        );
+        if (hasMemorySnapshot)
+        {
+            UI::Dashboard::Memory::MemoryDashboard::Render(
+                memorySnapshot,
+                memoryHistory,
+                memoryHistoryIndex,
+                memoryHistoryCount
+            );
+        }
+        else
+        {
+            ImGui::TextColored(
+                ImVec4(0.30f, 0.85f, 0.72f, 1.0f),
+                "MEMORY MONITOR"
+            );
+
+            ImGui::TextDisabled(
+                "Waiting for memory information..."
+            );
+        }
         break;
 
     case 3:
-        ImGui::Text("GPU");
-        ImGui::TextDisabled(
-            "GPU dashboard will be implemented here."
-        );
+        if (hasGpuSnapshot)
+        {
+            UI::Dashboard::Gpu::GpuDashboard::Render(
+                gpuSnapshot,
+                gpuHistory
+            );
+        }
+        else
+        {
+            ImGui::TextColored(
+                ImVec4(0.30f, 0.85f, 0.72f, 1.0f),
+                "GPU MONITOR"
+            );
+
+            ImGui::TextDisabled(
+                "Waiting for GPU information..."
+            );
+        }
         break;
 
     case 4:

@@ -17,20 +17,38 @@ void SystemMonitor::Start()
 {
     std::lock_guard<std::mutex> lock(lifecycleMutex_);
 
-    if (running_.load())
+    if (running_.load(std::memory_order_acquire))
         return;
 
     if (monitorThread_.joinable())
         monitorThread_.join();
 
+    // Inicializar monitor de CPU.
     if (!cpuMonitor_.Initialize())
     {
         OutputDebugStringW(
             L"[SystemMonitor] Error inicializando CpuMonitor.\n"
         );
+
+        cpuMonitor_.Shutdown();
         return;
     }
 
+    // Inicializar monitor de memoria RAM.
+    if (!memoryMonitor_.Initialize())
+    {
+        OutputDebugStringW(
+            L"[SystemMonitor] Error inicializando MemoryMonitor.\n"
+        );
+
+        cpuMonitor_.Shutdown();
+        memoryMonitor_.Shutdown();
+        return;
+    }
+    if (!gpuMonitor_.Initialize())
+    {
+        gpuMonitor_.Shutdown();
+    }
     running_.store(true, std::memory_order_release);
 
     monitorThread_ = std::thread(
@@ -51,9 +69,67 @@ void SystemMonitor::Stop()
     if (monitorThread_.joinable())
         monitorThread_.join();
 
+    // Liberar recursos de los monitores.
     cpuMonitor_.Shutdown();
+    memoryMonitor_.Shutdown();
+    gpuMonitor_.Shutdown();
 }
 
+void SystemMonitor::UpdateCpuMonitor()
+{
+    if (cpuMonitor_.Update())
+    {
+        events_.Publish<CpuSnapshot>(
+            "CPU",
+            cpuMonitor_.GetSnapshot()
+        );
+    }
+    else
+    {
+#ifdef _DEBUG
+        OutputDebugStringW(
+            L"[SystemMonitor] Error actualizando CPU.\n"
+        );
+#endif
+    }
+}
+void SystemMonitor::UpdateMemoryMonitor()
+{
+    if (memoryMonitor_.Update())
+    {
+        events_.Publish<MemorySnapshot>(
+            "MEMORY",
+            memoryMonitor_.GetSnapshot()
+        );
+    }
+    else
+    {
+#ifdef _DEBUG
+        OutputDebugStringW(
+            L"[SystemMonitor] Error actualizando memoria RAM.\n"
+        );
+#endif
+    }
+
+}
+void SystemMonitor::UpdateGpuMonitor()
+{
+	if (gpuMonitor_.Update())
+	{
+		events_.Publish<GpuSnapshot>(
+			"GPU",
+			gpuMonitor_.GetSnapshot()
+		);
+	}
+	else
+	{
+        #ifdef _DEBUG
+		OutputDebugStringW(
+			L"[SystemMonitor] Error actualizando GPU.\n"
+		);
+#endif
+	}
+}
 void SystemMonitor::MonitorLoop()
 {
     while (running_.load(std::memory_order_acquire))
@@ -73,19 +149,16 @@ void SystemMonitor::MonitorLoop()
             }
         }
 
-        if (!cpuMonitor_.Update())
-        {
-#ifdef _DEBUG
-            OutputDebugStringW(
-                L"[SystemMonitor] Error actualizando CPU.\n"
-            );
-#endif
-            continue;
-        }
+        if (!running_.load(std::memory_order_acquire))
+            break;
 
-        events_.Publish<CpuSnapshot>(
-            "CPU",
-            cpuMonitor_.GetSnapshot()
-        );
+        // Actualizar CPU.
+        UpdateCpuMonitor();
+
+        // Actualizar memoria RAM.
+        UpdateMemoryMonitor();
+
+		// Actualizar GPU.
+        UpdateGpuMonitor();
     }
 }
