@@ -90,22 +90,18 @@ namespace UI::Dashboard::Gpu
         }
 
         template<std::size_t N>
-        std::array<float, N> GetOrderedHistory(
+        void GetOrderedHistory(
             const std::array<float, N>& values,
             std::size_t index,
-            std::size_t count)
+            std::size_t count,
+            std::array<float, N>& ordered)
         {
-            std::array<float, N> ordered{};
-
-            if (count > N)
-                count = N;
+            count = std::min(count, N);
 
             const std::size_t start = (index + N - count) % N;
 
             for (std::size_t i = 0; i < count; ++i)
                 ordered[i] = values[(start + i) % N];
-
-            return ordered;
         }
 
         void BeginCard(const char* id, float height = 0.0f)
@@ -183,8 +179,13 @@ namespace UI::Dashboard::Gpu
             bool percentage = true)
         {
             count = std::min(count, GpuHistorySize);
-            auto ordered = GetOrderedHistory(
-                values, index, count
+            static thread_local std::array<float, GpuHistorySize> orderedHistory{};
+
+            GetOrderedHistory(
+                values,
+                index,
+                count,
+                orderedHistory
             );
 
             UI::Components::ChartConfig config;
@@ -210,7 +211,7 @@ namespace UI::Dashboard::Gpu
             std::array<UI::Components::ChartSeries, 1> series =
             { {
                 { "GPU", std::span<const float>(
-                    ordered.data(), count) }
+                    orderedHistory.data(), count) }
             } };
 
             UI::Components::Chart::Render(

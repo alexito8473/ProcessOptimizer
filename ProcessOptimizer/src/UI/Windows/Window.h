@@ -2,7 +2,6 @@
 #pragma once
 
 #include <Windows.h>
-
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -15,7 +14,11 @@
 #include "../../Monitoring/SystemMonitor/SystemMonitor.h"
 #include "../../Monitoring/MemoryMonitor/MemoryInfo.h"
 #include "../Screens/Gpu/GpuDashboard.h"
-#include "../Screens/Gpu/GpuDashboard.h"
+
+#include "../Screens/Process/ProcessDashboard.h"
+#include "../Rendering/Direct2DRenderer/Direct2DRenderer.h"
+#include <atomic>
+#include <chrono>
 class Window
 {
 public:
@@ -30,9 +33,12 @@ public:
 
 private:
     // Window
+
+
+    float currentFPS_ = 45.0f;
     HINSTANCE instance_ = nullptr;
     HWND hwnd_ = nullptr;
-
+    std::atomic<bool> needsRedraw_{ true };
     static constexpr wchar_t ClassName[] =
         L"ProcessOptimizerMainWindow";
 
@@ -54,7 +60,7 @@ private:
     std::shared_ptr<SharedState> sharedState_;
 
     ImGuiRenderer renderer_;
-
+    Direct2DRenderer direct2DRenderer_;
     // Navigation
     int selectedPage_ = 0;
 
@@ -65,6 +71,7 @@ private:
     std::size_t cpuSubscriptionId_ = 0;
     std::size_t memorySubscriptionId_ = 0;
     std::size_t gpuSubscriptionId_ = 0;
+    std::size_t processSubscriptionId_ = 0;
     bool subscribed_ = false;
 
     // Monitoring
@@ -93,6 +100,9 @@ private:
     std::size_t memoryHistoryCount_ = 0;
     bool hasMemorySnapshot_ = false;
 
+    ProcessDashboard processDashboard_;
+    ProcessSnapshot processSnapshot_{};
+    bool hasProcessSnapshot_ = false;
     // Memory history
     void AddMemorySample(
         float value

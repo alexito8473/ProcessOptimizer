@@ -15,6 +15,8 @@
 #include "../Screens/Cpu/CpuDashboard.h"
 #include "../Screens/Memory/MemoryDashboard.h"
 #include "../Screens/Gpu/GpuDashboard.h"
+#include "../Screens/Process/ProcessDashboard.h"
+
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND hwnd,
     UINT message,
@@ -84,7 +86,20 @@ bool Window::Create(int showCommand)
         hwnd_ = nullptr;
         return false;
     }
+    if (!direct2DRenderer_.Initialize(hwnd_))
+    {
+        MessageBoxW(
+            hwnd_,
+            L"No se pudo inicializar Direct2D.",
+            L"ProcessOptimizer",
+            MB_OK | MB_ICONERROR
+        );
 
+        renderer_.Shutdown();
+        DestroyWindow(hwnd_);
+        hwnd_ = nullptr;
+        return false;
+    }
     ApplyTheme();
 
     ShowWindow(hwnd_, showCommand);
@@ -99,45 +114,66 @@ bool Window::Create(int showCommand)
 // MAIN LOOP
 // ============================================================
 
-
 int Window::Run()
 {
     MSG message{};
 
     using Clock = std::chrono::steady_clock;
-    constexpr auto frameDuration = std::chrono::milliseconds(16);
+
+    constexpr auto frameDuration =
+        std::chrono::microseconds(22222); // Máximo 45 FPS
 
     auto lastFrame = Clock::now();
 
     while (message.message != WM_QUIT)
     {
-        if (PeekMessageW(
-            &message,
-            nullptr,
-            0,
-            0,
-            PM_REMOVE))
+        // Procesar mensajes de Windows.
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
         {
+            if (message.message == WM_QUIT)
+                break;
+
             TranslateMessage(&message);
             DispatchMessageW(&message);
+        }
+
+        if (message.message == WM_QUIT)
+            break;
+
+        // Si no hay cambios, esperar sin renderizar.
+        if (!needsRedraw_.load(std::memory_order_acquire))
+        {
+            MsgWaitForMultipleObjectsEx(
+                0,
+                nullptr,
+                INFINITE,
+                QS_ALLINPUT,
+                MWMO_INPUTAVAILABLE);
+
             continue;
         }
 
-        auto now = Clock::now();
+        const auto now = Clock::now();
 
+        // Limitar a 45 FPS.
         if (now - lastFrame < frameDuration)
         {
             Sleep(1);
             continue;
         }
 
-        lastFrame = now;
+        // Renderizar solamente si hay una actualización pendiente.
+        if (needsRedraw_.exchange(
+            false, std::memory_order_acq_rel))
+        {
+            renderer_.BeginFrame();
 
-        renderer_.BeginFrame();
+            RenderDashboard();
 
-        RenderDashboard();
+            renderer_.EndFrame();
 
-        renderer_.EndFrame();
+            lastFrame = Clock::now();
+        }
     }
 
     StopMonitoring();
@@ -398,6 +434,30 @@ void Window::StartMonitoring()
             }
         }
     );
+    processSubscriptionId_ = events_.Subscribe<ProcessSnapshot>(
+        "PROCESS",
+        [this](const ProcessSnapshot& snapshot)
+        {
+            {
+                std::lock_guard<std::mutex> lock(
+                    sharedState_->mutex
+                );
+
+                processSnapshot_ = snapshot;
+                hasProcessSnapshot_ = true;
+            }
+
+            if (hwnd_)
+            {
+                PostMessageW(
+                    hwnd_,
+                    WM_DATA_UPDATED,
+                    0,
+                    0
+                );
+            }
+        }
+    );
     subscribed_ = true;
 
     monitor_->Start();
@@ -429,6 +489,10 @@ void Window::StopMonitoring()
         events_.Unsubscribe<GpuSnapshot>(
             "GPU",
             gpuSubscriptionId_
+        );
+        events_.Unsubscribe<ProcessSnapshot>(
+            "PROCESS",
+            processSubscriptionId_
         );
         subscribed_ = false;
     }
@@ -505,6 +569,8 @@ void Window::RenderDashboard()
     CpuSnapshot snapshot{};
     MemorySnapshot memorySnapshot{};
     GpuSnapshot gpuSnapshot{};
+    ProcessSnapshot processSnapshot{};
+    bool hasProcessSnapshot = false;
     UI::Dashboard::Gpu::GpuDashboardHistory gpuHistory{};
     std::size_t cpuHistoryIndex = 0;
     std::size_t cpuHistoryCount = 0;
@@ -544,6 +610,8 @@ void Window::RenderDashboard()
         gpuSnapshot = gpuSnapshot_;
         gpuHistory = gpuHistory_;
         hasGpuSnapshot = hasGpuSnapshot_;
+        processSnapshot = processSnapshot_;
+        hasProcessSnapshot = hasProcessSnapshot_;
     }
 
     const ImGuiViewport* viewport =
@@ -683,10 +751,21 @@ void Window::RenderDashboard()
         break;
 
     case 4:
-        ImGui::Text("Processes");
-        ImGui::TextDisabled(
-            "Process manager will be implemented here."
-        );
+        if (hasProcessSnapshot)
+        {
+            processDashboard_.Render(processSnapshot);
+        }
+        else
+        {
+            ImGui::TextColored(
+                ImVec4(0.30f, 0.85f, 0.72f, 1.0f),
+                "PROCESS MONITOR"
+            );
+
+            ImGui::TextDisabled(
+                "Waiting for process information..."
+            );
+        }
         break;
 
     case 5:
@@ -716,15 +795,6 @@ LRESULT CALLBACK Window::WindowProc(
     WPARAM wParam,
     LPARAM lParam)
 {
-    if (ImGui_ImplWin32_WndProcHandler(
-        hwnd,
-        message,
-        wParam,
-        lParam))
-    {
-        return 1;
-    }
-
     Window* window = nullptr;
 
     if (message == WM_NCCREATE)
@@ -732,60 +802,91 @@ LRESULT CALLBACK Window::WindowProc(
         const auto* createStruct =
             reinterpret_cast<CREATESTRUCTW*>(lParam);
 
-        window = static_cast<Window*>(
-            createStruct->lpCreateParams
-            );
+        window = static_cast<Window*>(createStruct->lpCreateParams);
 
         SetWindowLongPtrW(
             hwnd,
             GWLP_USERDATA,
-            reinterpret_cast<LONG_PTR>(window)
-        );
+            reinterpret_cast<LONG_PTR>(window));
 
         window->hwnd_ = hwnd;
     }
     else
     {
         window = reinterpret_cast<Window*>(
-            GetWindowLongPtrW(
-                hwnd,
-                GWLP_USERDATA
-            )
-            );
+            GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
+
+    const bool imguiHandled =
+        ImGui_ImplWin32_WndProcHandler(
+            hwnd, message, wParam, lParam) != 0;
 
     switch (message)
     {
     case WM_DATA_UPDATED:
+    {
+        if (window)
+        {
+            window->needsRedraw_.store(
+                true, std::memory_order_release);
+        }
+
         return 0;
+    }
+
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+    case WM_LBUTTONDBLCLK:
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP:
+    case WM_MBUTTONDOWN:
+    case WM_MBUTTONUP:
+    case WM_MOUSEWHEEL:
+    case WM_MOUSEMOVE:
+    case WM_MOUSEHWHEEL:
+    case WM_KEYDOWN:
+    case WM_KEYUP:
+    case WM_CHAR:
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS:
+    case WM_CAPTURECHANGED:
+    {
+        if (window)
+        {
+            window->needsRedraw_.store(
+                true, std::memory_order_release);
+        }
+
+        break;
+    }
 
     case WM_SIZE:
+    {
         if (window && wParam != SIZE_MINIMIZED)
         {
-            window->renderer_.Resize(
-                LOWORD(lParam),
-                HIWORD(lParam)
-            );
+            const UINT width = LOWORD(lParam);
+            const UINT height = HIWORD(lParam);
+
+            window->renderer_.Resize(width, height);
+
+            window->needsRedraw_.store(
+                true, std::memory_order_release);
         }
+
         return 0;
+    }
 
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
 
     case WM_NCDESTROY:
-        SetWindowLongPtrW(
-            hwnd,
-            GWLP_USERDATA,
-            0
-        );
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         break;
     }
 
-    return DefWindowProcW(
-        hwnd,
-        message,
-        wParam,
-        lParam
-    );
+    if (imguiHandled)
+        return 1;
+
+    return DefWindowProcW(hwnd, message, wParam, lParam);
 }

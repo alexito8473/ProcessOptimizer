@@ -136,7 +136,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Pdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d2d1.lib;dwrite.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -153,7 +153,14 @@
     <ClCompile Include="src\Monitoring\GpuMonitor\GpuPerformance\GpuPerformance.cpp" />
     <ClCompile Include="src\Monitoring\GpuMonitor\GpuSensors\GpuSensors.cpp" />
     <ClCompile Include="src\Monitoring\GpuMonitor\GpuWddmInfo\GpuWddmInfo.cpp" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessEnumerator\ProcessEnumerator.cpp" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessGpu\ProcessGpu.cpp" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessIcon\ProcessIcon.cpp" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessMonitor.cpp" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessMonitor.h" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessPerformance\ProcessPerformance.cpp" />
     <ClCompile Include="src\UI\Components\Charts\GraphBuffer.cpp" />
+    <ClCompile Include="src\UI\Rendering\Direct2DRenderer\Direct2DRenderer.cpp" />
     <ClCompile Include="src\UI\Screens\Gpu\GpuDashboard.cpp" />
     <ClCompile Include="src\UI\Screens\Memory\MemoryDashboard.cpp" />
     <ClCompile Include="src\Monitoring\CpuMonitor\CpuMonitor.cpp" />
@@ -162,6 +169,7 @@
     <ClCompile Include="src\UI\Components\Charts\Chart.cpp" />
     <ClCompile Include="src\UI\Rendering\ImGuiRenderer.cpp" />
     <ClCompile Include="src\UI\Screens\Cpu\CpuDashboard.cpp" />
+    <ClCompile Include="src\UI\Screens\Process\ProcessDashboard.cpp" />
     <ClCompile Include="src\UI\Windows\Window.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -175,7 +183,13 @@
     <ClInclude Include="src\Monitoring\GpuMonitor\GpuPerformance\GpuPerformance.h" />
     <ClInclude Include="src\Monitoring\GpuMonitor\GpuSensors\GpuSensors.h" />
     <ClInclude Include="src\Monitoring\GpuMonitor\GpuWddmInfo\GpuWddmInfo.h" />
+    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessEnumerator\ProcessEnumerator.h" />
+    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessGpu\ProcessGpu.h" />
+    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessIcon\ProcessIcon.h" />
+    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessInfo.h" />
+    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessPerformance\ProcessPerformance.h" />
     <ClInclude Include="src\UI\Components\Charts\GraphBuffer.h" />
+    <ClInclude Include="src\UI\Rendering\Direct2DRenderer\Direct2DRenderer.h" />
     <ClInclude Include="src\UI\Screens\Gpu\GpuDashboard.h" />
     <ClInclude Include="src\UI\Screens\Memory\MemoryDashboard.h" />
     <ClInclude Include="src\Core\Events\Event.h" />
@@ -189,6 +203,7 @@
     <ClInclude Include="src\UI\Components\Charts\Chart.h" />
     <ClInclude Include="src\UI\Rendering\ImGuiRenderer.h" />
     <ClInclude Include="src\UI\Screens\Cpu\CpuDashboard.h" />
+    <ClInclude Include="src\UI\Screens\Process\ProcessDashboard.h" />
     <ClInclude Include="src\UI\Windows\Window.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

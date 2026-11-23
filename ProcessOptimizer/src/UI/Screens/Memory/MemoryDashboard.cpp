@@ -247,7 +247,8 @@ namespace UI::Dashboard::Memory
             if (sampleCount > history.size())
                 sampleCount = history.size();
 
-            std::vector<float> orderedHistory(sampleCount);
+            static std::vector<float> orderedHistory;
+            orderedHistory.resize(sampleCount);
 
             const std::size_t oldestIndex =
                 (historyIndex + history.size() - sampleCount)

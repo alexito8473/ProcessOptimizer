@@ -71,7 +71,7 @@ bool ImGuiRenderer::CreateDevice(HWND hwnd)
     desc.OutputWindow = hwnd;
     desc.SampleDesc.Count = 1;
     desc.Windowed = TRUE;
-    desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 
     D3D_FEATURE_LEVEL featureLevel{};
 
@@ -162,9 +162,7 @@ void ImGuiRenderer::EndFrame()
         clearColor
     );
 
-    ImGui_ImplDX11_RenderDrawData(
-        ImGui::GetDrawData()
-    );
+    ImGui_ImplDX11_RenderDrawData(   ImGui::GetDrawData()  );
 
     swapChain_->Present(1, 0);
 }
@@ -174,13 +172,16 @@ void ImGuiRenderer::Resize(UINT width, UINT height)
     if (!initialized_ || width == 0 || height == 0)
         return;
 
+    // Desvincular el render target del contexto.
+    context_->OMSetRenderTargets(0, nullptr, nullptr);
+
     if (renderTarget_)
     {
         renderTarget_->Release();
         renderTarget_ = nullptr;
     }
 
-    HRESULT result = swapChain_->ResizeBuffers(
+    const HRESULT result = swapChain_->ResizeBuffers(
         0,
         width,
         height,
@@ -191,7 +192,8 @@ void ImGuiRenderer::Resize(UINT width, UINT height)
     if (FAILED(result))
         return;
 
-    CreateRenderTarget();
+    if (!CreateRenderTarget())
+        return;
 }
 
 void ImGuiRenderer::Shutdown()

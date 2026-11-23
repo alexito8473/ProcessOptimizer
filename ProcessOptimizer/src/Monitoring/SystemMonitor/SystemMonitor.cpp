@@ -1,6 +1,6 @@
 
 #include "SystemMonitor.h"
-
+#include <chrono>
 #include <Windows.h>
 
 SystemMonitor::SystemMonitor(EventSystem& events)
@@ -47,8 +47,20 @@ void SystemMonitor::Start()
     }
     if (!gpuMonitor_.Initialize())
     {
+        OutputDebugStringW(
+            L"[SystemMonitor] Error inicializando GpuMonitor.\n"
+        );
         gpuMonitor_.Shutdown();
     }
+
+    if (!processMonitor_.Update())
+	{
+		OutputDebugStringW(
+			L"[SystemMonitor] Error inicializando ProcessMonitor.\n"
+		);
+		processMonitor_.Shutdown();
+	}
+	
     running_.store(true, std::memory_order_release);
 
     monitorThread_ = std::thread(
@@ -73,6 +85,26 @@ void SystemMonitor::Stop()
     cpuMonitor_.Shutdown();
     memoryMonitor_.Shutdown();
     gpuMonitor_.Shutdown();
+    processMonitor_.Shutdown();
+
+}
+void SystemMonitor::UpdateProcessMonitor()
+{
+    if (processMonitor_.Update())
+    {
+        events_.Publish<ProcessSnapshot>(
+            "PROCESS",
+            processMonitor_.GetSnapshot()
+        );
+    }
+    else
+    {
+#ifdef _DEBUG
+        OutputDebugStringW(
+            L"[SystemMonitor] Error actualizando procesos.\n"
+        );
+#endif
+    }
 }
 
 void SystemMonitor::UpdateCpuMonitor()
@@ -130,16 +162,37 @@ void SystemMonitor::UpdateGpuMonitor()
 #endif
 	}
 }
+
+
 void SystemMonitor::MonitorLoop()
 {
+    using Clock = std::chrono::steady_clock;
+
+    auto nextCpu = Clock::now() + cpuInterval_;
+    auto nextMemory = Clock::now() + memoryInterval_;
+    auto nextGpu = Clock::now() + gpuInterval_;
+    auto nextProcess = Clock::now() + processInterval_;
+
     while (running_.load(std::memory_order_acquire))
     {
         {
             std::unique_lock<std::mutex> lock(stopMutex_);
 
-            if (stopCondition_.wait_for(
+            // Calcular la siguiente actualización sin std::min.
+            auto nextUpdate = nextCpu;
+
+            if (nextMemory < nextUpdate)
+                nextUpdate = nextMemory;
+
+            if (nextGpu < nextUpdate)
+                nextUpdate = nextGpu;
+
+            if (nextProcess < nextUpdate)
+                nextUpdate = nextProcess;
+
+            if (stopCondition_.wait_until(
                 lock,
-                updateInterval_,
+                nextUpdate,
                 [this]()
                 {
                     return !running_.load(std::memory_order_acquire);
@@ -152,13 +205,31 @@ void SystemMonitor::MonitorLoop()
         if (!running_.load(std::memory_order_acquire))
             break;
 
-        // Actualizar CPU.
-        UpdateCpuMonitor();
+        auto now = Clock::now();
 
-        // Actualizar memoria RAM.
-        UpdateMemoryMonitor();
+        if (now >= nextCpu)
+        {
+            UpdateCpuMonitor();
+            nextCpu = Clock::now() + cpuInterval_;
+        }
 
-		// Actualizar GPU.
-        UpdateGpuMonitor();
+        if (now >= nextMemory)
+        {
+            UpdateMemoryMonitor();
+            nextMemory = Clock::now() + memoryInterval_;
+        }
+
+        if (now >= nextGpu)
+        {
+            UpdateGpuMonitor();
+            nextGpu = Clock::now() + gpuInterval_;
+        }
+
+        if (now >= nextProcess)
+        {
+            UpdateProcessMonitor();
+            nextProcess = Clock::now() + processInterval_;
+        }
     }
 }
+

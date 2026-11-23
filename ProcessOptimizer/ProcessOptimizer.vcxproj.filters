@@ -59,6 +59,14 @@
     <ClCompile Include="src\Monitoring\GpuMonitor\GpuPciInfo\GpuPciInfo.cpp" />
     <ClCompile Include="src\Monitoring\GpuMonitor\GpuMonitor.cpp" />
     <ClCompile Include="src\UI\Screens\Gpu\GpuDashboard.cpp" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessEnumerator\ProcessEnumerator.cpp" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessPerformance\ProcessPerformance.cpp" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessMonitor.h" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessMonitor.cpp" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessIcon\ProcessIcon.cpp" />
+    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessGpu\ProcessGpu.cpp" />
+    <ClCompile Include="src\UI\Screens\Process\ProcessDashboard.cpp" />
+    <ClCompile Include="src\UI\Rendering\Direct2DRenderer\Direct2DRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\UI\Windows\Window.h" />
@@ -86,5 +94,12 @@
     <ClInclude Include="src\Monitoring\GpuMonitor\GpuPciInfo\GpuPciInfo.h" />
     <ClInclude Include="src\Monitoring\GpuMonitor\GpuMonitor.h" />
     <ClInclude Include="src\UI\Screens\Gpu\GpuDashboard.h" />
+    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessInfo.h" />
+    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessEnumerator\ProcessEnumerator.h" />
+    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessPerformance\ProcessPerformance.h" />
+    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessIcon\ProcessIcon.h" />
+    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessGpu\ProcessGpu.h" />
+    <ClInclude Include="src\UI\Screens\Process\ProcessDashboard.h" />
+    <ClInclude Include="src\UI\Rendering\Direct2DRenderer\Direct2DRenderer.h" />
   </ItemGroup>
 </Project>
