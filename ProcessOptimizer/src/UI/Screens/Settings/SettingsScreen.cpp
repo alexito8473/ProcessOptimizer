@@ -5,6 +5,8 @@
 #include <array>
 
 #include "../../Components/Widgets/Widgets.h"
+#include "../../../IPC/PipeTransport.h"
+#include "../../../Service/ServiceControl.h"
 
 namespace UI::Screens::Settings
 {
@@ -198,6 +200,84 @@ namespace UI::Screens::Settings
 
             UI::Widgets::EndCard();
         }
+
+        void RenderService(
+            UI::Localization::Language language,
+            const UI::Theme::UiPalette& palette)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::ServiceSection),
+                nullptr,
+                palette);
+
+            UI::Widgets::BeginCard(
+                "ServiceStatusCard", 116.0f, palette);
+
+            const bool installed = Service::IsInstalled();
+            const std::uint32_t state =
+                Service::QueryStatus();
+
+            IPC::PipeClient client;
+            const bool connected = client.Ping();
+
+            ImGui::TextUnformatted(
+                T(language, Text::ServiceStatus));
+            ImGui::SameLine();
+
+            if (!installed)
+            {
+                UI::Widgets::Badge(
+                    T(language, Text::ServiceNotInstalled),
+                    palette.TextMuted,
+                    palette);
+            }
+            else if (state == SERVICE_RUNNING)
+            {
+                UI::Widgets::Badge(
+                    T(language, Text::ServiceRunning),
+                    palette.Success,
+                    palette);
+            }
+            else
+            {
+                UI::Widgets::Badge(
+                    T(language, Text::ServiceStopped),
+                    palette.Warning,
+                    palette);
+            }
+
+            ImGui::Spacing();
+
+            UI::Widgets::Badge(
+                connected
+                    ? T(language, Text::ServiceModeLabelRunning)
+                    : T(language, Text::LocalMode),
+                connected ? palette.Accent : palette.TextMuted,
+                palette);
+
+            ImGui::Spacing();
+
+            if (installed)
+            {
+                if (state == SERVICE_RUNNING)
+                {
+                    if (UI::Widgets::SecondaryButton(
+                            T(language, Text::StopServiceButton),
+                            palette))
+                    {
+                        Service::Stop();
+                    }
+                }
+                else if (UI::Widgets::PrimaryButton(
+                             T(language, Text::StartServiceButton),
+                             palette))
+                {
+                    Service::Start();
+                }
+            }
+
+            UI::Widgets::EndCard();
+        }
     }
 
     void SettingsScreen::Render(
@@ -219,6 +299,7 @@ namespace UI::Screens::Settings
         ImGui::Spacing();
 
         RenderAppearance(settings, palette, language);
+        RenderService(language, palette);
         RenderPreview(palette, language);
 
         ImGui::Spacing();

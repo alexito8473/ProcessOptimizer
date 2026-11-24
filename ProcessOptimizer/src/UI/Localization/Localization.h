@@ -111,6 +111,17 @@ namespace UI::Localization
         ColorPalette,
         SavedNote,
 
+        ServiceSection,
+        ServiceModeLabel,
+        LocalMode,
+        ServiceModeLabelRunning,
+        ServiceStatus,
+        ServiceRunning,
+        ServiceStopped,
+        ServiceNotInstalled,
+        StartServiceButton,
+        StopServiceButton,
+
         Count
     };
 

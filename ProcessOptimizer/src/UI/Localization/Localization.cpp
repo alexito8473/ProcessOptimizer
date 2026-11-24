@@ -110,7 +110,18 @@ namespace UI::Localization
             "Ghost",
             "Usage bar",
             "Color palette",
-            "Saved automatically"
+            "Saved automatically",
+
+            "Monitoring service",
+            "Local mode",
+            "Service mode",
+            "Connected",
+            "Service status",
+            "Running",
+            "Stopped",
+            "Not installed",
+            "Start service",
+            "Stop service"
         }};
 
         const std::array<const char*, Count> SpanishTexts{{
@@ -211,7 +222,18 @@ namespace UI::Localization
             "Fantasma",
             "Barra de uso",
             "Paleta de colores",
-            "Guardado autom\303\241ticamente"
+            "Guardado autom\303\241ticamente",
+
+            "Servicio de monitorizaci\303\263n",
+            "Modo local",
+            "Modo servicio",
+            "Conectado",
+            "Estado del servicio",
+            "En ejecuci\303\263n",
+            "Detenido",
+            "No instalado",
+            "Iniciar servicio",
+            "Detener servicio"
         }};
     }
 

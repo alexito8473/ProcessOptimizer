@@ -9,8 +9,10 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <vector>
 #include "../../Core/Events/EventSystem.h"
+#include "../../IPC/PipeTransport.h"
 #include "../../Monitoring/SystemMonitor/SystemMonitor.h"
 #include "../../Monitoring/CpuMonitor/CpuInfo.h"
 #include "../../Monitoring/MemoryMonitor/MemoryInfo.h"
@@ -89,7 +91,16 @@ public:
     void StartMonitoring();
     void StopMonitoring();
 
+    bool IsServiceMode() const
+    {
+        return serviceMode_.load();
+    }
+
 private:
+    void StartServiceClient();
+    void StopServiceClient();
+    void ServiceClientLoop();
+    void ApplyRemoteState(const IPC::State& state);
     bool IsInteractingWithUI() const;
     static constexpr wchar_t ClassName[] =
         L"ProcessOptimizerMainWindow";
@@ -184,4 +195,12 @@ private:
     std::size_t gpuHistoryCount_ = 0;
 
     ProcessDashboard processDashboard_;
+
+    // Cliente del servicio de monitorizacion. Si el pipe no responde,
+    // StartMonitoring mantiene el monitor local para que la UI siga
+    // funcionando por si sola.
+    std::atomic<bool> serviceMode_{ false };
+    std::atomic<bool> clientThreadRunning_{ false };
+    std::thread clientThread_;
+    std::uint64_t lastRemoteSequence_ = 0;
 };

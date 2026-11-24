@@ -468,3 +468,49 @@ porque ImGui necesita UTF-8 y MSVC interpreta mal esas secuencias.
 usando `processorGroup + logicalProcessorIndex` como clave. Antes el historial
 existía pero nadie lo alimentaba, por eso cada procesador lógico mostraba
 `Collecting data...`.
+
+## Arquitectura servicio / UI / bandeja
+
+La monitorización se ha separado en tres ejecutables independientes:
+
+| Ejecutable | Función |
+| --- | --- |
+| `ProcessOptimizer.Service.exe` | Servicio de Windows (`LocalSystem`, arranque automático). Ejecuta `SystemMonitor`, es dueño de los históricos y expone un named pipe `\\.\pipe\ProcessOptimizer.Monitor`. |
+| `ProcessOptimizer.UI.exe` | Interfaz completa. Consume el pipe; si el servicio no está disponible sigue monitorizando en local. Incluye el indicador de modo y los botones Iniciar/Detener servicio en Settings. |
+| `ProcessOptimizer.Tray.exe` | Mini UI de bandeja separada. Tooltip con CPU/RAM/GPU, popup con el uso actual y el proceso con más carga, y menú contextual. |
+
+Los tres pueden estar activos a la vez o por separado. El servicio mantiene el
+histórico, así que cerrar y volver a abrir la UI no pierde las gráficas.
+
+Si DXGI no expone adaptadores desde la sesión 0, el servicio conserva los
+contadores PDH `GPU Engine` y los detalles DXGI los consulta la UI en modo local.
+
+### Protocolo
+
+`src/IPC/Protocol.h` define un mensaje binario versionado con `magic`, `versión`,
+`tipo` y `tamaño`. `PipeTransport.cpp` implementa el servidor y el cliente con
+mensajes `Ping` y `GetState`. No se envían `HICON` entre procesos: la UI obtiene
+los iconos de proceso por su cuenta.
+
+### Modo local y reconexión
+
+La UI intenta conectar al iniciar. Si no hay servicio, arranca el monitor local.
+Un hilo cliente sigue sondeando el pipe: cuando el servicio aparece, la UI deja
+de monitorizar en local y pasa a modo servicio; si el servicio cae, vuelve al
+modo local automáticamente.
+
+### Bandeja
+
+El tray usa un mutex nominal para no duplicar iconos. El popup se muestra con
+`WM_MOUSEMOVE` del icono y se oculta cuando el cursor sale del icono y del popup.
+El menú permite abrir la UI, arrancar/parar el servicio y salir.
+
+### Instalador
+
+`Installer/ProcessOptimizer.iss` instala los tres ejecutables, registra el
+servicio con `--install --start` y lo desinstala con `--stop --uninstall`.
+Concede a los usuarios interactivos `SERVICE_START`, `SERVICE_STOP` y
+`SERVICE_QUERY_STATUS` para que los botones funcionen sin elevación de UAC.
+
+El `.iss` se compila con Inno Setup (`ISCC.exe`). Si no está instalado en este
+equipo, el instalador no se puede regenerar aquí; el script queda listo.

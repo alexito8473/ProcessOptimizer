@@ -4,4 +4,6 @@
     <Platform Name="x86" />
   </Configurations>
   <Project Path="ProcessOptimizer/ProcessOptimizer.vcxproj" Id="d59fcefd-48e1-4d51-93b2-1d5a2e9e2e99" />
+  <Project Path="ProcessOptimizer/ProcessOptimizer.Service.vcxproj" Id="7c2f0d51-9e3a-4a1b-8f40-2d6c91b0e731" />
+  <Project Path="ProcessOptimizer/ProcessOptimizer.Tray.vcxproj" Id="b4a7e2c9-63f1-4d80-9b2e-8c15d7a04326" />
 </Solution>

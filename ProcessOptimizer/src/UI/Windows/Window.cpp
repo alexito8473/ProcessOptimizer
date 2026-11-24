@@ -1,5 +1,6 @@
 
 #include "Window.h"
+#include "../../Service/MonitorState.h"
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 
@@ -248,6 +249,18 @@ namespace
                 ++history.historyCount;
         }
     }
+
+    template<std::size_t N>
+    void CopyRing(
+        const IPC::FloatRing<N>& source,
+        std::array<float, N>& destination,
+        std::size_t& index,
+        std::size_t& count)
+    {
+        destination = source.values;
+        index = source.index % N;
+        count = (std::min)(source.count, N);
+    }
 }
 
 std::uint32_t Window::PageDirtyMask(int page)
@@ -286,6 +299,7 @@ Window::Window()
 
 Window::~Window()
 {
+    StopServiceClient();
     StopMonitoring();
     ShutdownRegionRenderer();
 }
@@ -343,7 +357,13 @@ bool Window::Create(HINSTANCE instance)
     ShowWindow(hwnd_, SW_SHOW);
     UpdateWindow(hwnd_);
 
-    StartMonitoring();
+    // Si el servicio ya esta disponible no arrancamos el monitor local:
+    // el historico lo mantiene el servicio y aqui solo se consume.
+    IPC::PipeClient probe;
+    if (!probe.Ping())
+        StartMonitoring();
+
+    StartServiceClient();
 
     return true;
 }
@@ -1383,6 +1403,192 @@ void Window::StopMonitoring()
     subscribed_ = false;
 
     monitor_.reset();
+}
+
+void Window::StartServiceClient()
+{
+    clientThreadRunning_.store(true);
+    clientThread_ =
+        std::thread(&Window::ServiceClientLoop, this);
+}
+
+void Window::StopServiceClient()
+{
+    clientThreadRunning_.store(false);
+
+    if (clientThread_.joinable())
+        clientThread_.join();
+}
+
+void Window::ServiceClientLoop()
+{
+    IPC::PipeClient client;
+
+    while (clientThreadRunning_.load())
+    {
+        IPC::State remote;
+
+        if (client.GetState(remote))
+        {
+            const bool wasServiceMode =
+                serviceMode_.exchange(true);
+
+            if (!wasServiceMode || subscribed_)
+                StopMonitoring();
+
+            if (remote.sequence != lastRemoteSequence_)
+            {
+                ApplyRemoteState(remote);
+                lastRemoteSequence_ = remote.sequence;
+            }
+
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(200));
+            continue;
+        }
+
+        if (serviceMode_.exchange(false))
+            StartMonitoring();
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(1500));
+    }
+}
+
+void Window::ApplyRemoteState(const IPC::State& state)
+{
+    {
+        std::lock_guard<std::mutex> lock(
+            sharedState_->mutex);
+
+        SharedState& shared = *sharedState_;
+
+        if (state.hasCpu)
+        {
+            shared.cpuSnapshot = state.cpu;
+            shared.hasCpuSnapshot = true;
+
+            CopyRing(
+                state.cpuHistory,
+                shared.cpuHistory,
+                shared.cpuHistoryIndex,
+                shared.cpuHistoryCount);
+        }
+
+        shared.processorHistories.clear();
+        for (const IPC::ProcessorHistory& remote :
+             state.processorHistories)
+        {
+            UI::Dashboard::Cpu::ProcessorChartHistory
+                history{};
+
+            history.group = remote.group;
+            history.logicalIndex = remote.logicalIndex;
+
+            CopyRing(
+                remote.values, history.values,
+                history.historyIndex,
+                history.historyCount);
+
+            shared.processorHistories.push_back(history);
+        }
+
+        if (state.hasMemory)
+        {
+            shared.memorySnapshot = state.memory;
+            shared.hasMemorySnapshot = true;
+
+            CopyRing(
+                state.memoryHistory,
+                shared.memoryHistory,
+                shared.memoryHistoryIndex,
+                shared.memoryHistoryCount);
+        }
+
+        if (state.hasGpu)
+        {
+            shared.gpuSnapshot = state.gpu;
+            shared.hasGpuSnapshot = true;
+
+            shared.gpuHistory.adapters.clear();
+
+            for (const IPC::GpuAdapterHistory& remote :
+                 state.gpuHistories)
+            {
+                UI::Dashboard::Gpu::GpuAdapterHistory
+                    history{};
+
+                history.luidLowPart = remote.luidLowPart;
+                history.luidHighPart = remote.luidHighPart;
+
+                CopyRing(remote.usage, history.usage,
+                         history.historyIndex,
+                         history.historyCount);
+                history.usage3D = remote.usage3D.values;
+                history.usageCopy =
+                    remote.usageCopy.values;
+                history.usageCompute =
+                    remote.usageCompute.values;
+                history.usageVideoDecode =
+                    remote.usageVideoDecode.values;
+                history.usageVideoEncode =
+                    remote.usageVideoEncode.values;
+                history.usageVideoProcessing =
+                    remote.usageVideoProcessing.values;
+                history.dedicatedMemory =
+                    remote.dedicatedMemory.values;
+                history.sharedMemory =
+                    remote.sharedMemory.values;
+
+                shared.gpuHistory.adapters.push_back(
+                    history);
+            }
+        }
+
+        UI::Dashboard::Overview::CombinedHistory&
+            overview = shared.overviewHistory;
+
+        CopyRing(state.overview.cpu, overview.cpu,
+                 overview.index, overview.count);
+        overview.memory = state.overview.memory.values;
+
+        overview.gpus.clear();
+        for (const IPC::GpuSeriesHistory& remote :
+             state.overview.gpus)
+        {
+            UI::Dashboard::Overview::GpuSeries series{};
+
+            series.luidLowPart = remote.luidLowPart;
+            series.luidHighPart = remote.luidHighPart;
+            series.name = remote.name;
+            series.usage = remote.usage.values;
+
+            overview.gpus.push_back(series);
+        }
+
+        if (state.hasProcesses)
+        {
+            shared.processSnapshot = state.processes;
+            shared.hasProcessSnapshot = true;
+        }
+    }
+
+    std::uint32_t invalidated = 0;
+
+    if (state.changedMask & Service::ChangeMask::Cpu)
+        invalidated |= PageDirtyMask(0) | PageDirtyMask(1);
+    if (state.changedMask & Service::ChangeMask::Memory)
+        invalidated |= PageDirtyMask(0) | PageDirtyMask(2);
+    if (state.changedMask & Service::ChangeMask::Gpu)
+        invalidated |= PageDirtyMask(0) | PageDirtyMask(3);
+    if (state.changedMask & Service::ChangeMask::Processes)
+        invalidated |= PageDirtyMask(0) | PageDirtyMask(4);
+
+    if (invalidated == 0)
+        invalidated = PageDirtyMask(0);
+
+    scheduler_.Invalidate(invalidated);
+    RequestFrame();
 }
 
 
