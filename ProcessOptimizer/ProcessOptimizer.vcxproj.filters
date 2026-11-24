@@ -45,7 +45,12 @@
     <ClCompile Include="src\Monitoring\SystemMonitor\SystemMonitor.cpp" />
     <ClCompile Include="src\UI\Rendering\ImGuiRenderer.cpp" />
     <ClCompile Include="src\UI\Components\Charts\Chart.cpp" />
+    <ClCompile Include="src\UI\Components\Widgets\Widgets.cpp" />
+    <ClCompile Include="src\UI\Localization\Localization.cpp" />
     <ClCompile Include="src\UI\Screens\Cpu\CpuDashboard.cpp" />
+    <ClCompile Include="src\UI\Screens\Settings\SettingsScreen.cpp" />
+    <ClCompile Include="src\UI\Theme\Theme.cpp" />
+    <ClCompile Include="src\UI\Screens\Dashboard\OverviewDashboard.cpp" />
     <ClCompile Include="src\Monitoring\MemoryMonitor\MemoryMonitor.cpp" />
     <ClCompile Include="src\UI\Screens\Memory\MemoryDashboard.cpp" />
     <ClCompile Include="src\UI\Components\Charts\GraphBuffer.cpp" />
@@ -66,7 +71,10 @@
     <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessIcon\ProcessIcon.cpp" />
     <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessGpu\ProcessGpu.cpp" />
     <ClCompile Include="src\UI\Screens\Process\ProcessDashboard.cpp" />
-    <ClCompile Include="src\UI\Rendering\Direct2DRenderer\Direct2DRenderer.cpp" />
+    <ClCompile Include="src\UI\Rendering\Core\RenderManager\RenderManager.cpp" />
+    <ClCompile Include="src\UI\Rendering\Core\RenderRegion\RenderRegion.cpp" />
+    <ClCompile Include="src\UI\Rendering\DirectX11\D3D11RegionTexture.cpp" />
+    <ClCompile Include="src\UI\Rendering\ImGui\ImGuiRegionRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\UI\Windows\Window.h" />
@@ -78,7 +86,11 @@
     <ClInclude Include="src\Monitoring\CpuMonitor\CpuInfo.h" />
     <ClInclude Include="src\UI\Rendering\ImGuiRenderer.h" />
     <ClInclude Include="src\UI\Components\Charts\Chart.h" />
+    <ClInclude Include="src\UI\Components\Widgets\Widgets.h" />
+    <ClInclude Include="src\UI\Localization\Localization.h" />
     <ClInclude Include="src\UI\Screens\Cpu\CpuDashboard.h" />
+    <ClInclude Include="src\UI\Screens\Settings\SettingsScreen.h" />
+    <ClInclude Include="src\UI\Theme\Theme.h" />
     <ClInclude Include="src\Monitoring\MemoryMonitor\MemoryInfo.h" />
     <ClInclude Include="src\Monitoring\MemoryMonitor\MemoryMonitor.h" />
     <ClInclude Include="src\UI\Screens\Memory\MemoryDashboard.h" />
@@ -94,12 +106,17 @@
     <ClInclude Include="src\Monitoring\GpuMonitor\GpuPciInfo\GpuPciInfo.h" />
     <ClInclude Include="src\Monitoring\GpuMonitor\GpuMonitor.h" />
     <ClInclude Include="src\UI\Screens\Gpu\GpuDashboard.h" />
+    <ClInclude Include="src\UI\Screens\Dashboard\OverviewDashboard.h" />
     <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessInfo.h" />
     <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessEnumerator\ProcessEnumerator.h" />
     <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessPerformance\ProcessPerformance.h" />
     <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessIcon\ProcessIcon.h" />
     <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessGpu\ProcessGpu.h" />
     <ClInclude Include="src\UI\Screens\Process\ProcessDashboard.h" />
-    <ClInclude Include="src\UI\Rendering\Direct2DRenderer\Direct2DRenderer.h" />
+    <ClInclude Include="src\UI\Rendering\Core\RenderRegion\RenderRegion.h" />
+    <ClInclude Include="src\UI\Rendering\Core\RenderManager\RenderManager.h" />
+    <ClInclude Include="src\UI\Rendering\Core\UiScheduler\UiScheduler.h" />
+    <ClInclude Include="src\UI\Rendering\DirectX11\D3D11RegionTexture.h" />
+    <ClInclude Include="src\UI\Rendering\ImGui\ImGuiRegionRenderer.h" />
   </ItemGroup>
 </Project>

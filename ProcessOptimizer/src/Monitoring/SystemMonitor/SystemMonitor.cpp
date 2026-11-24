@@ -54,12 +54,13 @@ void SystemMonitor::Start()
     }
 
     if (!processMonitor_.Update())
-	{
-		OutputDebugStringW(
-			L"[SystemMonitor] Error inicializando ProcessMonitor.\n"
-		);
-		processMonitor_.Shutdown();
-	}
+    {
+        // La primera lectura puede no producir snapshot todavía (warm-up de
+        // PDH). No apagamos el monitor: Update() se reintentará en el bucle.
+        OutputDebugStringW(
+            L"[SystemMonitor] ProcessMonitor sin snapshot inicial; se reintentara.\n"
+        );
+    }
 	
     running_.store(true, std::memory_order_release);
 

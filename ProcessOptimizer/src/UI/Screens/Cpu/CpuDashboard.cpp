@@ -1,57 +1,78 @@
 
 #include "CpuDashboard.h"
 
+#include <imgui.h>
+#include <implot.h>
+
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <string>
-#include <span>
-#include <imgui.h>
-#include <vector>
-#include "../../Components/Charts/Chart.h"
+
+#include "../../Components/Widgets/Widgets.h"
 
 namespace UI::Dashboard::Cpu
 {
     namespace
     {
-        // ========================================================
-        // COLORS
-        // ========================================================
+        using Text = UI::Localization::Text;
 
-        constexpr ImVec4 AccentColor =
-            ImVec4(0.30f, 0.85f, 0.72f, 1.0f);
+        UI::Theme::UiPalette ActivePalette{};
+        UI::Localization::Language ActiveLanguage =
+            UI::Localization::Language::Spanish;
 
-        constexpr ImVec4 TextColor =
-            ImVec4(0.92f, 0.95f, 0.98f, 1.0f);
+        const char* T(Text text)
+        {
+            return UI::Localization::Translate(
+                ActiveLanguage, text);
+        }
 
-        constexpr ImVec4 SecondaryColor =
-            ImVec4(0.55f, 0.62f, 0.70f, 1.0f);
+        const ImVec4& AccentColor()
+        {
+            return ActivePalette.Cpu;
+        }
 
-        constexpr ImVec4 WarningColor =
-            ImVec4(0.95f, 0.70f, 0.30f, 1.0f);
+        const ImVec4& TextColor()
+        {
+            return ActivePalette.Text;
+        }
 
-        constexpr ImVec4 DangerColor =
-            ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
+        const ImVec4& SecondaryColor()
+        {
+            return ActivePalette.TextMuted;
+        }
+
+        const ImVec4& WarningColor()
+        {
+            return ActivePalette.Warning;
+        }
+
+        const ImVec4& DangerColor()
+        {
+            return ActivePalette.Danger;
+        }
 
         ImVec4 GetUsageColor(float usage)
         {
             if (usage >= 85.0f)
-                return DangerColor;
+                return DangerColor();
 
             if (usage >= 65.0f)
-                return WarningColor;
+                return WarningColor();
 
-            return AccentColor;
+            return AccentColor();
         }
 
-        // ========================================================
-        // COMMON UI
-        // ========================================================
+        float ClampUsage(float value)
+        {
+            return std::clamp(value, 0.0f, 100.0f);
+        }
 
         void SectionTitle(
             const char* title,
             const char* description = nullptr)
         {
-            ImGui::TextColored(AccentColor, "%s", title);
+            ImGui::TextColored(AccentColor(), "%s", title);
 
             if (description)
             {
@@ -64,7 +85,7 @@ namespace UI::Dashboard::Cpu
 
         void DrawUsageBar(float usage)
         {
-            usage = std::clamp(usage, 0.0f, 100.0f);
+            usage = ClampUsage(usage);
 
             ImGui::PushStyleColor(
                 ImGuiCol_PlotHistogram,
@@ -83,11 +104,11 @@ namespace UI::Dashboard::Cpu
             const char* title,
             const char* value,
             const char* description,
-            ImVec4 valueColor = TextColor)
+            ImVec4 valueColor = TextColor())
         {
             ImGui::BeginChild(
                 id,
-                ImVec2(0.0f, 118.0f),
+                ImVec2(0.0f, 110.0f),
                 true);
 
             ImGui::TextDisabled("%s", title);
@@ -97,7 +118,7 @@ namespace UI::Dashboard::Cpu
                 ImGuiCol_Text,
                 valueColor);
 
-            ImGui::SetWindowFontScale(1.45f);
+            ImGui::SetWindowFontScale(1.4f);
             ImGui::TextUnformatted(value);
             ImGui::SetWindowFontScale(1.0f);
 
@@ -109,29 +130,11 @@ namespace UI::Dashboard::Cpu
             ImGui::EndChild();
         }
 
-        void InformationRow(
-            const char* label,
-            const char* value)
-        {
-            ImGui::TableNextRow();
-
-            ImGui::TableSetColumnIndex(0);
-            ImGui::TextDisabled("%s", label);
-
-            ImGui::TableSetColumnIndex(1);
-            ImGui::TextWrapped("%s", value);
-        }
-
-        // ========================================================
-        // SUMMARY
-        // ========================================================
-
         void RenderSummary(const CpuSnapshot& snapshot)
         {
-            const float usage = std::clamp(
-                static_cast<float>(snapshot.totalUsagePercent),
-                0.0f,
-                100.0f);
+            const float usage = ClampUsage(
+                static_cast<float>(
+                    snapshot.totalUsagePercent));
 
             char usageText[32]{};
             char frequencyText[32]{};
@@ -139,34 +142,48 @@ namespace UI::Dashboard::Cpu
             char logicalText[32]{};
             char socketsText[32]{};
 
-            sprintf_s(usageText, "%.1f%%", usage);
+            std::snprintf(
+                usageText,
+                sizeof(usageText),
+                "%.1f%%",
+                usage);
 
             if (snapshot.frequency.estimatedMHz > 0.0)
             {
-                sprintf_s(
+                std::snprintf(
                     frequencyText,
+                    sizeof(frequencyText),
                     "%.2f GHz",
                     snapshot.frequency.estimatedMHz / 1000.0);
             }
             else
             {
-                sprintf_s(frequencyText, "--");
+                std::snprintf(
+                    frequencyText,
+                    sizeof(frequencyText),
+                    "--");
             }
 
-            sprintf_s(
+            std::snprintf(
                 coresText,
+                sizeof(coresText),
                 "%lu",
-                snapshot.processor.physicalCoreCount);
+                static_cast<unsigned long>(
+                    snapshot.processor.physicalCoreCount));
 
-            sprintf_s(
+            std::snprintf(
                 logicalText,
+                sizeof(logicalText),
                 "%lu",
-                snapshot.processor.logicalProcessorCount);
+                static_cast<unsigned long>(
+                    snapshot.processor.logicalProcessorCount));
 
-            sprintf_s(
+            std::snprintf(
                 socketsText,
+                sizeof(socketsText),
                 "%lu",
-                snapshot.processor.socketCount);
+                static_cast<unsigned long>(
+                    snapshot.processor.socketCount));
 
             if (ImGui::BeginTable(
                 "CpuSummary",
@@ -177,43 +194,42 @@ namespace UI::Dashboard::Cpu
 
                 MetricCard(
                     "CpuUsageCard",
-                    "CPU USAGE",
+                    T(Text::CpuUsage),
                     usageText,
-                    "Total processor usage",
+                    T(Text::TotalUsage),
                     GetUsageColor(usage));
 
                 ImGui::TableNextColumn();
 
                 MetricCard(
                     "CpuFrequencyCard",
-                    "ESTIMATED FREQUENCY",
+                    T(Text::EstimatedFrequencyLabel),
                     frequencyText,
-                    "Estimated, not hardware-measured",
-                    AccentColor);
+                    T(Text::EstimatedFrequencyLabel));
 
                 ImGui::TableNextColumn();
 
                 MetricCard(
                     "CpuCoresCard",
-                    "PHYSICAL CORES",
+                    T(Text::PhysicalCores),
                     coresText,
-                    "Detected physical cores");
+                    T(Text::DetectedPhysicalCores));
 
                 ImGui::TableNextColumn();
 
                 MetricCard(
                     "CpuLogicalCard",
-                    "LOGICAL PROCESSORS",
+                    T(Text::LogicalProcessorsCard),
                     logicalText,
-                    "Available logical processors");
+                    T(Text::AvailableLogicalProcessors));
 
                 ImGui::TableNextColumn();
 
                 MetricCard(
                     "CpuSocketsCard",
-                    "SOCKETS",
+                    T(Text::Sockets),
                     socketsText,
-                    "Detected CPU packages");
+                    T(Text::DetectedPackages));
 
                 ImGui::EndTable();
             }
@@ -221,19 +237,15 @@ namespace UI::Dashboard::Cpu
             ImGui::Spacing();
         }
 
-        // ========================================================
-        // PROCESSOR IDENTITY
-        // ========================================================
-
         void RenderProcessorIdentity(const CpuSnapshot& snapshot)
         {
             ImGui::BeginChild(
                 "CpuIdentity",
-                ImVec2(0.0f, 105.0f),
+                ImVec2(0.0f, 95.0f),
                 true);
 
             ImGui::TextColored(
-                AccentColor,
+                AccentColor(),
                 "PROCESSOR");
 
             ImGui::Spacing();
@@ -257,107 +269,156 @@ namespace UI::Dashboard::Cpu
             ImGui::Spacing();
         }
 
-        // ========================================================
-        // GLOBAL CPU GRAPH
-        // ========================================================
-
-        void RenderCpuHistory(
+        void RenderHistory(
+            const char* label,
             std::span<const float> history,
             std::size_t historyIndex,
             std::size_t historyCount,
-            double estimatedGHz)
+            float height)
         {
-            char title[128]{};
-
-            if (estimatedGHz > 0.0)
+            if (history.empty() || historyCount == 0)
             {
-                sprintf_s(
-                    title,
-                    "CPU PERFORMANCE | %.2f GHz",
-                    estimatedGHz);
-            }
-            else
-            {
-                sprintf_s(title, "CPU PERFORMANCE HISTORY");
-            }
-
-            SectionTitle(
-                "PERFORMANCE HISTORY",
-                "Real-time processor utilization");
-
-            if (history.empty())
-            {
-                ImGui::TextDisabled("Collecting CPU history...");
-                ImGui::Spacing();
+                ImGui::TextDisabled("%s", T(Text::CollectingData));
                 return;
             }
 
-            std::size_t sampleCount = historyCount;
+            const std::size_t count =
+               (std::min)(historyCount, history.size());
 
-            if (sampleCount > history.size())
-            {
-                sampleCount = history.size();
-            }
-
-            if (sampleCount == 0)
-            {
-                ImGui::TextDisabled("Collecting CPU history...");
-                ImGui::Spacing();
-                return;
-            }
-
-            // Reorganizar las muestras en orden cronológico.
-            std::vector<float> orderedHistory(sampleCount);
-
-            const std::size_t oldestIndex =
-                (historyIndex + history.size() - sampleCount)
+            const std::size_t oldest =
+                (historyIndex + history.size() - count)
                 % history.size();
 
-            for (std::size_t i = 0; i < sampleCount; ++i)
-            {
-                const std::size_t index =
-                    (oldestIndex + i) % history.size();
+            ImPlot::SetNextAxesLimits(
+                0.0,
+                static_cast<double>(
+                    std::max<std::size_t>(count - 1, 1)),
+                0.0,
+                100.0,
+                ImPlotCond_Always);
 
-                orderedHistory[i] = history[index];
+            if (ImPlot::BeginPlot(
+                label,
+                ImVec2(-1.0f, height)))
+            {
+                ImPlot::SetupAxes(
+                    "Samples",
+                    "Usage (%)",
+                    ImPlotAxisFlags_NoTickLabels,
+                    ImPlotAxisFlags_RangeFit);
+
+                ImPlot::SetupAxisLimits(
+                    ImAxis_Y1,
+                    0.0,
+                    100.0,
+                    ImPlotCond_Always);
+
+                ImPlot::PlotLineG(
+                    "CPU",
+                    [](int index, void* data) -> ImPlotPoint
+                    {
+                        const auto* values =
+                            static_cast<const std::span<const float>*>(data);
+
+                        return ImPlotPoint(
+                            index,
+                            (*values)[static_cast<std::size_t>(index)]);
+                    },
+                    &history,
+                    static_cast<int>(count));
+
+                // La fuente de datos es circular; PlotLineG
+                // recibe el índice cronológico mediante la función
+                // de acceso siguiente.
+                (void)oldest;
+
+                ImPlot::EndPlot();
             }
-
-            UI::Components::ChartConfig config;
-
-            config.title = title;
-            config.xAxisLabel = "Samples";
-            config.yAxisLabel = "Usage (%)";
-            config.height = 230.0f;
-
-            config.lockXAxis = true;
-            config.xMin = 0.0;
-            config.xMax = static_cast<double>(sampleCount - 1);
-
-            config.lockYAxis = true;
-            config.yMin = 0.0;
-            config.yMax = 100.0;
-
-            UI::Components::ChartSeries series
-            {
-                "CPU",
-                std::span<const float>(orderedHistory)
-            };
-
-            UI::Components::Chart::Render(
-                config,
-                std::span<const UI::Components::ChartSeries>(&series,1), true);
-
-            ImGui::Spacing();
         }
 
-        // ========================================================
-        // TOPOLOGY
-        // ========================================================
+        struct CircularHistoryData
+        {
+            std::span<const float> values;
+            std::size_t oldest = 0;
+        };
+
+        ImPlotPoint GetCircularHistoryPoint(
+            int index,
+            void* userData)
+        {
+            const auto* data =
+                static_cast<const CircularHistoryData*>(userData);
+
+            const std::size_t position =
+                (data->oldest +
+                    static_cast<std::size_t>(index))
+                % data->values.size();
+
+            return ImPlotPoint(
+                index,
+                data->values[position]);
+        }
+
+        void RenderCircularHistory(
+            const char* label,
+            std::span<const float> history,
+            std::size_t historyIndex,
+            std::size_t historyCount,
+            float height)
+        {
+            if (history.empty() || historyCount == 0)
+            {
+                ImGui::TextDisabled("%s", T(Text::CollectingData));
+                return;
+            }
+
+            const std::size_t count =
+                (std::min)(historyCount, history.size());
+
+            CircularHistoryData data{
+                history,
+                (historyIndex + history.size() - count)
+                    % history.size()
+            };
+
+            if (ImPlot::BeginPlot(
+                label,
+                ImVec2(-1.0f, height)))
+            {
+                ImPlot::SetupAxes(
+                    "Samples",
+                    "Usage (%)",
+                    ImPlotAxisFlags_NoTickLabels,
+                    ImPlotAxisFlags_NoTickLabels);
+
+                ImPlot::SetupAxisLimits(
+                    ImAxis_X1,
+                    0.0,
+                    static_cast<double>(
+                        std::max<std::size_t>(count - 1, 1)),
+                    ImPlotCond_Always);
+
+                ImPlot::SetupAxisLimits(
+                    ImAxis_Y1,
+                    0.0,
+                    100.0,
+                    ImPlotCond_Always);
+
+                ImPlot::PlotLineG(
+                    "CPU",
+                    GetCircularHistoryPoint,
+                    &data,
+                    static_cast<int>(count));
+
+                ImPlot::EndPlot();
+            }
+        }
 
         void RenderTopology(const CpuSnapshot& snapshot)
         {
             SectionTitle(
-                "PROCESSOR TOPOLOGY",
-                "Physical and logical configuration");
+                T(Text::ProcessorTopology),
+                T(Text::PhysicalLogicalConfig));
 
             if (ImGui::BeginTable(
                 "CpuTopology",
@@ -365,38 +426,37 @@ namespace UI::Dashboard::Cpu
                 ImGuiTableFlags_SizingStretchSame))
             {
                 ImGui::TableNextColumn();
-                ImGui::TextDisabled("SOCKETS");
+                ImGui::TextDisabled("%s", T(Text::Sockets));
                 ImGui::Text(
                     "%lu",
-                    snapshot.processor.socketCount);
+                    static_cast<unsigned long>(
+                        snapshot.processor.socketCount));
 
                 ImGui::TableNextColumn();
-                ImGui::TextDisabled("PHYSICAL CORES");
+                ImGui::TextDisabled(
+                    "%s", T(Text::PhysicalCores));
                 ImGui::Text(
                     "%lu",
-                    snapshot.processor.physicalCoreCount);
+                    static_cast<unsigned long>(
+                        snapshot.processor.physicalCoreCount));
 
                 ImGui::TableNextColumn();
-                ImGui::TextDisabled("LOGICAL PROCESSORS");
+                ImGui::TextDisabled(
+                    "%s", T(Text::LogicalProcessorsCard));
                 ImGui::Text(
                     "%lu",
-                    snapshot.processor.logicalProcessorCount);
+                    static_cast<unsigned long>(
+                        snapshot.processor.logicalProcessorCount));
 
                 ImGui::EndTable();
             }
-
-            ImGui::Spacing();
         }
-
-        // ========================================================
-        // FREQUENCY
-        // ========================================================
 
         void RenderFrequency(const CpuSnapshot& snapshot)
         {
             SectionTitle(
-                "FREQUENCY",
-                "Processor performance information");
+                T(Text::FrequencyTitle),
+                T(Text::FrequencyDesc));
 
             if (ImGui::BeginTable(
                 "CpuFrequency",
@@ -404,13 +464,12 @@ namespace UI::Dashboard::Cpu
                 ImGuiTableFlags_SizingStretchSame))
             {
                 ImGui::TableNextColumn();
-
                 ImGui::TextDisabled("ESTIMATED");
 
                 if (snapshot.frequency.estimatedMHz > 0.0)
                 {
                     ImGui::TextColored(
-                        AccentColor,
+                        AccentColor(),
                         "%.2f GHz",
                         snapshot.frequency.estimatedMHz / 1000.0);
                 }
@@ -420,7 +479,6 @@ namespace UI::Dashboard::Cpu
                 }
 
                 ImGui::TableNextColumn();
-
                 ImGui::TextDisabled("EFFECTIVE");
 
                 if (snapshot.frequency.effectiveMHz > 0.0)
@@ -435,7 +493,6 @@ namespace UI::Dashboard::Cpu
                 }
 
                 ImGui::TableNextColumn();
-
                 ImGui::TextDisabled("PERFORMANCE");
 
                 ImGui::Text(
@@ -446,32 +503,25 @@ namespace UI::Dashboard::Cpu
             }
 
             ImGui::TextDisabled(
-                "PDH reference: %lu MHz",
-                snapshot.frequency.baseMHz);
+                "Base frequency: %lu MHz",
+                static_cast<unsigned long>(
+                    snapshot.frequency.baseMHz));
 
             ImGui::TextDisabled(
                 "Maximum frequency counter: %.1f%%",
                 snapshot.frequency.maximumFrequencyPercent);
-
-            ImGui::Spacing();
         }
-
-        // ========================================================
-        // CACHE
-        // ========================================================
 
         void RenderCache(const CpuSnapshot& snapshot)
         {
             SectionTitle(
-                "CACHE INFORMATION",
-                "Processor cache hierarchy");
+                T(Text::CacheTitle),
+                T(Text::CacheDesc));
 
             if (snapshot.caches.empty())
             {
                 ImGui::TextDisabled(
                     "Cache information unavailable.");
-
-                ImGui::Spacing();
                 return;
             }
 
@@ -497,10 +547,14 @@ namespace UI::Dashboard::Cpu
                     ImGui::Text("L%u", cache.level);
 
                     ImGui::TableSetColumnIndex(1);
-                    ImGui::Text("%lu KB", cache.sizeKB);
+                    ImGui::Text(
+                        "%lu KB",
+                        static_cast<unsigned long>(cache.sizeKB));
 
                     ImGui::TableSetColumnIndex(2);
-                    ImGui::Text("%lu bytes", cache.lineSize);
+                    ImGui::Text(
+                        "%lu bytes",
+                        static_cast<unsigned long>(cache.lineSize));
 
                     ImGui::TableSetColumnIndex(3);
 
@@ -514,19 +568,13 @@ namespace UI::Dashboard::Cpu
 
                 ImGui::EndTable();
             }
-
-            ImGui::Spacing();
         }
-
-        // ========================================================
-        // VIRTUALIZATION
-        // ========================================================
 
         void RenderVirtualization(const CpuSnapshot& snapshot)
         {
             SectionTitle(
-                "VIRTUALIZATION",
-                "Hardware and hypervisor status");
+                T(Text::VirtualizationTitle),
+                T(Text::VirtualizationDesc));
 
             if (ImGui::BeginTable(
                 "CpuVirtualization",
@@ -534,20 +582,20 @@ namespace UI::Dashboard::Cpu
                 ImGuiTableFlags_SizingStretchSame))
             {
                 ImGui::TableNextColumn();
-
                 ImGui::TextDisabled("HARDWARE SUPPORT");
+
                 ImGui::TextColored(
                     snapshot.virtualization.supported
-                    ? AccentColor
-                    : DangerColor,
+                    ? AccentColor()
+                    : DangerColor(),
                     "%s",
                     snapshot.virtualization.supported
                     ? "Supported"
                     : "Not supported");
 
                 ImGui::TableNextColumn();
-
                 ImGui::TextDisabled("FIRMWARE");
+
                 ImGui::Text(
                     "%s",
                     snapshot.virtualization.firmwareEnabled
@@ -555,8 +603,8 @@ namespace UI::Dashboard::Cpu
                     : "Disabled / Unknown");
 
                 ImGui::TableNextColumn();
-
                 ImGui::TextDisabled("HYPERVISOR");
+
                 ImGui::Text(
                     "%s",
                     snapshot.virtualization.hypervisorPresent
@@ -565,19 +613,13 @@ namespace UI::Dashboard::Cpu
 
                 ImGui::EndTable();
             }
-
-            ImGui::Spacing();
         }
-
-        // ========================================================
-        // SYSTEM ACTIVITY
-        // ========================================================
 
         void RenderSystemActivity(const CpuSnapshot& snapshot)
         {
             SectionTitle(
-                "SYSTEM ACTIVITY",
-                "Operating system activity");
+                T(Text::SystemActivityTitle),
+                T(Text::SystemActivityDesc));
 
             if (ImGui::BeginTable(
                 "CpuSystemActivity",
@@ -586,39 +628,48 @@ namespace UI::Dashboard::Cpu
             {
                 ImGui::TableNextColumn();
                 ImGui::TextDisabled("PROCESSES");
-                ImGui::Text("%lu", snapshot.activity.processCount);
+                ImGui::Text(
+                    "%lu",
+                    static_cast<unsigned long>(
+                        snapshot.activity.processCount));
 
                 ImGui::TableNextColumn();
                 ImGui::TextDisabled("THREADS");
-                ImGui::Text("%lu", snapshot.activity.threadCount);
+                ImGui::Text(
+                    "%lu",
+                    static_cast<unsigned long>(
+                        snapshot.activity.threadCount));
 
                 ImGui::TableNextColumn();
                 ImGui::TextDisabled("HANDLES");
-                ImGui::Text("%lu", snapshot.activity.handleCount);
+                ImGui::Text(
+                    "%lu",
+                    static_cast<unsigned long>(
+                        snapshot.activity.handleCount));
 
                 ImGui::TableNextColumn();
                 ImGui::TextDisabled("CONTEXT SWITCHES");
-                ImGui::Text("%lu", snapshot.activity.contextSwitches);
+                ImGui::Text(
+                    "%lu",
+                    static_cast<unsigned long>(
+                        snapshot.activity.contextSwitches));
 
                 ImGui::TableNextColumn();
                 ImGui::TextDisabled("INTERRUPTS");
-                ImGui::Text("%lu", snapshot.activity.interrupts);
+                ImGui::Text(
+                    "%lu",
+                    static_cast<unsigned long>(
+                        snapshot.activity.interrupts));
 
                 ImGui::EndTable();
             }
-
-            ImGui::Spacing();
         }
-
-        // ========================================================
-        // CPU HARDWARE INFORMATION
-        // ========================================================
 
         void RenderHardwareInformation(const CpuSnapshot& snapshot)
         {
             if (!ImGui::CollapsingHeader(
-                "HARDWARE INFORMATION",
-                ImGuiTreeNodeFlags_DefaultOpen))
+                    T(Text::HardwareInformation),
+                    ImGuiTreeNodeFlags_DefaultOpen))
             {
                 return;
             }
@@ -643,74 +694,66 @@ namespace UI::Dashboard::Cpu
             RenderSystemActivity(snapshot);
 
             ImGui::EndChild();
-            ImGui::Spacing();
         }
-
-        // ========================================================
-        // PROCESSOR MINI CHART
-        // ========================================================
 
         void RenderProcessorMiniChart(
             const ProcessorChartHistory& history)
         {
-            std::array<float, HistorySize> orderedValues{};
+            const std::size_t count =
+                (std::min)(history.historyCount, history.values.size());
 
-            std::size_t sampleCount = history.historyCount;
-            if (sampleCount > history.values.size())
-                sampleCount = history.values.size();
-
-            const std::size_t oldestIndex =
-                (history.historyIndex +
-                    history.values.size() -
-                    sampleCount) %
-                history.values.size();
-
-            for (std::size_t i = 0;
-                i < sampleCount;
-                ++i)
+            if (count == 0)
             {
-                const std::size_t index =
-                    (oldestIndex + i) % history.values.size();
-
-                orderedValues[i] = history.values[index];
+                ImGui::TextDisabled("%s", T(Text::CollectingData));
+                return;
             }
+
+            CircularHistoryData data{
+                std::span<const float>(history.values),
+                (history.historyIndex + history.values.size() - count)
+                    % history.values.size()
+            };
 
             const std::string label =
                 "##ProcessorChart_" +
                 std::to_string(history.group) + "_" +
                 std::to_string(history.logicalIndex);
 
-            UI::Components::ChartConfig config;
-
-            config.title = label;
-            config.xAxisLabel = "";
-            config.yAxisLabel = "";
-            config.height = 85.0f;
-
-            config.lockXAxis = true;
-            config.xMin = 0.0;
-            config.xMax = static_cast<double>(HistorySize - 1);
-
-            config.lockYAxis = true;
-            config.yMin = 0.0;
-            config.yMax = 100.0;
-
-            UI::Components::ChartSeries series
+            if (ImPlot::BeginPlot(
+                label.c_str(),
+                ImVec2(-1.0f, 75.0f),
+                ImPlotFlags_NoTitle |
+                ImPlotFlags_NoLegend |
+                ImPlotFlags_NoMouseText))
             {
-                "Usage",
-                std::span<const float>(
-                    orderedValues.data(),
-                    sampleCount)
-            };
+                ImPlot::SetupAxes(
+                    nullptr,
+                    nullptr,
+                    ImPlotAxisFlags_NoDecorations,
+                    ImPlotAxisFlags_NoDecorations);
 
-            UI::Components::Chart::Render(
-                config,
-                std::span<const UI::Components::ChartSeries>(&series, 1), false);
+                ImPlot::SetupAxisLimits(
+                    ImAxis_X1,
+                    0.0,
+                    static_cast<double>(
+                        std::max<std::size_t>(count - 1, 1)),
+                    ImPlotCond_Always);
+
+                ImPlot::SetupAxisLimits(
+                    ImAxis_Y1,
+                    0.0,
+                    100.0,
+                    ImPlotCond_Always);
+
+                ImPlot::PlotLineG(
+                    "Usage",
+                    GetCircularHistoryPoint,
+                    &data,
+                    static_cast<int>(count));
+
+                ImPlot::EndPlot();
+            }
         }
-
-        // ========================================================
-        // LOGICAL PROCESSORS
-        // ========================================================
 
         void RenderLogicalProcessors(
             const CpuSnapshot& snapshot,
@@ -718,16 +761,22 @@ namespace UI::Dashboard::Cpu
             bool& showCharts)
         {
             SectionTitle(
-                "LOGICAL PROCESSORS",
-                "Individual processor utilization");
+                T(Text::LogicalProcessors),
+                T(Text::IndividualUtilization));
 
-            if (ImGui::RadioButton("Bars", !showCharts))
+            if (ImGui::RadioButton(
+                    T(Text::Bars), !showCharts))
+            {
                 showCharts = false;
+            }
 
             ImGui::SameLine();
 
-            if (ImGui::RadioButton("Mini charts", showCharts))
+            if (ImGui::RadioButton(
+                    T(Text::MiniCharts), showCharts))
+            {
                 showCharts = true;
+            }
 
             ImGui::Spacing();
             ImGui::Separator();
@@ -736,7 +785,7 @@ namespace UI::Dashboard::Cpu
             if (snapshot.logicalProcessors.empty())
             {
                 ImGui::TextDisabled(
-                    "No logical processors detected.");
+                    "%s", T(Text::NoLogicalProcessors));
                 return;
             }
 
@@ -754,10 +803,8 @@ namespace UI::Dashboard::Cpu
             {
                 ImGui::TableNextColumn();
 
-                const float usage = std::clamp(
-                    static_cast<float>(processor.usagePercent),
-                    0.0f,
-                    100.0f);
+                const float usage = ClampUsage(
+                    static_cast<float>(processor.usagePercent));
 
                 const std::string cardId =
                     "Processor_" +
@@ -766,7 +813,7 @@ namespace UI::Dashboard::Cpu
 
                 ImGui::BeginChild(
                     cardId.c_str(),
-                    ImVec2(0.0f, showCharts ? 165.0f : 65.0f),
+                    ImVec2(0.0f, showCharts ? 150.0f : 65.0f),
                     true);
 
                 ImGui::Text(
@@ -803,7 +850,8 @@ namespace UI::Dashboard::Cpu
                         histories.end(),
                         [&processor](const ProcessorChartHistory& history)
                         {
-                            return history.group == processor.processorGroup &&
+                            return history.group ==
+                                processor.processorGroup &&
                                 history.logicalIndex ==
                                 processor.logicalProcessorIndex;
                         });
@@ -811,7 +859,7 @@ namespace UI::Dashboard::Cpu
                     if (it != histories.end())
                         RenderProcessorMiniChart(*it);
                     else
-                        ImGui::TextDisabled("Collecting data...");
+                        ImGui::TextDisabled("%s", T(Text::CollectingData));
                 }
 
                 ImGui::EndChild();
@@ -819,12 +867,7 @@ namespace UI::Dashboard::Cpu
 
             ImGui::EndTable();
         }
-
-    } // namespace
-
-    // ============================================================
-    // PUBLIC SCREEN ENTRY POINT
-    // ============================================================
+    }
 
     void CpuDashboard::Render(
         const CpuSnapshot& snapshot,
@@ -832,43 +875,46 @@ namespace UI::Dashboard::Cpu
         std::size_t cpuHistoryIndex,
         std::size_t cpuHistoryCount,
         std::span<const ProcessorChartHistory> processorHistories,
-        bool& showProcessorCharts)
+        bool& showProcessorCharts,
+        const UI::Theme::UiPalette& palette,
+        UI::Localization::Language language)
     {
-        // Header
-        ImGui::TextColored(
-            AccentColor,
-            "CPU MONITOR");
+        ActivePalette = palette;
+        ActiveLanguage = language;
+
+        UI::Widgets::Title(
+            T(Text::CpuMonitor), palette);
 
         ImGui::SameLine();
-
-        ImGui::TextDisabled(
-            "| Real-time processor monitoring");
+        UI::Widgets::Subtitle(
+            T(Text::RealTimeCpu), palette);
 
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
 
-        // Processor identity
         RenderProcessorIdentity(snapshot);
 
-        // Five summary cards
         RenderSummary(snapshot);
 
-        // Global CPU performance graph
-        RenderCpuHistory(
+        SectionTitle(
+            T(Text::PerformanceHistory),
+            T(Text::CpuUtilization));
+
+        RenderCircularHistory(
+            "CpuPerformanceHistory",
             cpuHistory,
             cpuHistoryIndex,
             cpuHistoryCount,
-            snapshot.frequency.estimatedMHz / 1000.0);
+            230.0f);
 
-        // Hardware details: topology, frequency, cache, virtualization
-        // and system activity.
+        ImGui::Spacing();
+
         RenderHardwareInformation(snapshot);
 
-        // Per-logical-processor utilization and optional mini charts
         if (ImGui::CollapsingHeader(
-            "LOGICAL PROCESSORS",
-            ImGuiTreeNodeFlags_DefaultOpen))
+                T(Text::LogicalProcessors),
+                ImGuiTreeNodeFlags_DefaultOpen))
         {
             ImGui::BeginChild(
                 "LogicalProcessorsPanel",
@@ -884,4 +930,3 @@ namespace UI::Dashboard::Cpu
         }
     }
 }
- 

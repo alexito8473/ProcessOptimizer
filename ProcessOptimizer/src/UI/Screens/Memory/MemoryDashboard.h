@@ -15,7 +15,6 @@ namespace UI::Dashboard::Memory
             const MemorySnapshot& snapshot,
             std::span<const float> memoryHistory,
             std::size_t historyIndex,
-            std::size_t historyCount
-        );
+            std::size_t historyCount);
     };
 }

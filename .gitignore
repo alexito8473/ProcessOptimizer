@@ -20,3 +20,6 @@ vcpkg_installed/
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Estado en tiempo real de Dear ImGui
+imgui.ini

@@ -1,6 +1,12 @@
 
 #include "MemoryDashboard.h"
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include <Windows.h>
+
 #include <algorithm>
 #include <cstdio>
 #include <string>
@@ -28,6 +34,31 @@ namespace UI::Dashboard::Memory
 
         constexpr ImVec4 DangerColor =
             ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
+
+        std::string WideToUtf8(const std::wstring& value)
+        {
+            if (value.empty())
+                return {};
+
+            const int size = WideCharToMultiByte(
+                CP_UTF8, 0, value.c_str(), -1,
+                nullptr, 0, nullptr, nullptr);
+
+            if (size <= 1)
+                return {};
+
+            std::string result(
+                static_cast<std::size_t>(size), '\0');
+
+            WideCharToMultiByte(
+                CP_UTF8, 0, value.c_str(), -1,
+                result.data(),
+                static_cast<int>(result.size()),
+                nullptr, nullptr);
+
+            result.pop_back(); // Terminador nulo.
+            return result;
+        }
 
         ImVec4 GetUsageColor(float usage)
         {
@@ -450,19 +481,25 @@ namespace UI::Dashboard::Memory
 
                         ImGui::Text("%s", capacity);
 
+                        const std::string deviceLocator =
+                            WideToUtf8(module->deviceLocator);
+
                         ImGui::TextDisabled(
                             "%s",
-                            module->deviceLocator.empty()
-                            ? L"Location unavailable"
-                            : module->deviceLocator.c_str());
+                            deviceLocator.empty()
+                            ? "Location unavailable"
+                            : deviceLocator.c_str());
 
                         ImGui::Separator();
 
+                        const std::string manufacturer =
+                            WideToUtf8(module->manufacturer);
+
                         ImGui::TextDisabled(
                             "%s",
-                            module->manufacturer.empty()
-                            ? L"Unknown manufacturer"
-                            : module->manufacturer.c_str());
+                            manufacturer.empty()
+                            ? "Unknown manufacturer"
+                            : manufacturer.c_str());
 
                         const std::uint32_t moduleSpeed =
                             module->configuredSpeed > 0

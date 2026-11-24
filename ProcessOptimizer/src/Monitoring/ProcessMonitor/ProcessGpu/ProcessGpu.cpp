@@ -200,8 +200,12 @@ bool ProcessGpu::Update()
 
     if (firstSample_)
     {
+        // La primera lectura solo establece la línea base de PDH. No es un
+        // fallo: devolvemos éxito con uso vacío para que ProcessMonitor no
+        // destruya la query durante el warm-up.
         firstSample_ = false;
-        return false;
+        usage_.clear();
+        return true;
     }
 
     usage_.clear();

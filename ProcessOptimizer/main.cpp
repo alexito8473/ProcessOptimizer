@@ -1,8 +1,10 @@
 
 #include <Windows.h>
+
 #include "src/UI/Windows/Window.h"
 #include "src/Monitoring/SystemMonitor/SystemMonitor.h"
 #include "src/Core/Events/EventSystem.h"
+
 #include <iostream>
 
 int WINAPI wWinMain(
@@ -11,9 +13,9 @@ int WINAPI wWinMain(
     PWSTR,
     int nCmdShow)
 {
-    Window window(hInstance);
+    Window window;
 
-    if (!window.Create(nCmdShow))
+    if (!window.Create(hInstance))
     {
         MessageBoxW(
             nullptr,
@@ -25,5 +27,12 @@ int WINAPI wWinMain(
         return 1;
     }
 
-    return window.Run();
+    ShowWindow(
+        GetActiveWindow(),
+        nCmdShow
+    );
+
+    window.Run();
+
+    return 0;
 }

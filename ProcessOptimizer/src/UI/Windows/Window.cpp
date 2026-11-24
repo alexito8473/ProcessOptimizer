@@ -1,64 +1,312 @@
 
 #include "Window.h"
-
-#include <Windows.h>
-
-#include <algorithm>
-#include <array>
-#include <iterator>
-#include <memory>
-#include <mutex>
-#include <vector>
-#include <chrono>
 #include <imgui.h>
 #include <imgui_impl_win32.h>
-#include "../Screens/Cpu/CpuDashboard.h"
-#include "../Screens/Memory/MemoryDashboard.h"
-#include "../Screens/Gpu/GpuDashboard.h"
-#include "../Screens/Process/ProcessDashboard.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <iomanip>
+#include <iterator>
+#include <sstream>
+#include <span>
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND hwnd,
     UINT message,
     WPARAM wParam,
-    LPARAM lParam
-);
+    LPARAM lParam);
 
-// ============================================================
-// CONSTRUCTOR
-// ============================================================
-
-Window::Window(HINSTANCE instance)
-    : instance_(instance)
+namespace
 {
-    sharedState_ = std::make_shared<SharedState>();
+    const char* Tr(
+        UI::Localization::Language language,
+        UI::Localization::Text text)
+    {
+        return UI::Localization::Translate(language, text);
+    }
+
+    void AppendGpuHistorySample(
+        UI::Dashboard::Gpu::GpuDashboardHistory& history,
+        const GpuSnapshot& snapshot)
+    {
+        constexpr std::size_t capacity =
+            UI::Dashboard::Gpu::GpuHistorySize;
+
+        for (const GpuAdapterInfo& gpu : snapshot.gpus)
+        {
+            auto it = std::find_if(
+                history.adapters.begin(),
+                history.adapters.end(),
+                [&gpu](const auto& entry)
+                {
+                    return entry.luidLowPart == gpu.luidLowPart &&
+                           entry.luidHighPart == gpu.luidHighPart;
+                });
+
+            if (it == history.adapters.end())
+            {
+                history.adapters.emplace_back();
+                it = std::prev(history.adapters.end());
+
+                it->luidLowPart = gpu.luidLowPart;
+                it->luidHighPart = gpu.luidHighPart;
+            }
+
+            auto& entry = *it;
+            const std::size_t index = entry.historyIndex;
+
+            entry.usage[index] =
+                static_cast<float>(gpu.usagePercent);
+            entry.usage3D[index] =
+                static_cast<float>(gpu.usage3D);
+            entry.usageCopy[index] =
+                static_cast<float>(gpu.usageCopy);
+            entry.usageCompute[index] =
+                static_cast<float>(gpu.usageCompute);
+            entry.usageVideoDecode[index] =
+                static_cast<float>(gpu.usageVideoDecode);
+            entry.usageVideoEncode[index] =
+                static_cast<float>(gpu.usageVideoEncode);
+            entry.usageVideoProcessing[index] =
+                static_cast<float>(gpu.usageVideoProcessing);
+            entry.dedicatedMemory[index] = static_cast<float>(
+                gpu.processDedicatedMemoryUsedBytes /
+                (1024.0 * 1024.0));
+            entry.sharedMemory[index] = static_cast<float>(
+                gpu.processSharedMemoryUsedBytes /
+                (1024.0 * 1024.0));
+
+            entry.historyIndex = (index + 1) % capacity;
+
+            if (entry.historyCount < capacity)
+                ++entry.historyCount;
+        }
+    }
+
+    void AppendOverviewSample(SharedState& state)
+    {
+        constexpr std::size_t capacity =
+            UI::Dashboard::Overview::HistorySize;
+
+        double cpuUsage = 0.0;
+        double memoryUsage = 0.0;
+
+        if (state.hasCpuSnapshot)
+            cpuUsage = state.cpuSnapshot.totalUsagePercent;
+
+        if (state.hasMemorySnapshot)
+            memoryUsage = state.memorySnapshot.usagePercent;
+
+        const auto clampUsage =
+            [](double value)
+            {
+                return static_cast<float>(
+                    (std::max)(0.0, (std::min)(value, 100.0)));
+            };
+
+        const auto adapterNameToUtf8 =
+            [](const std::wstring& value)
+            {
+                if (value.empty())
+                    return std::string();
+
+                const int size = WideCharToMultiByte(
+                    CP_UTF8, 0, value.c_str(), -1,
+                    nullptr, 0, nullptr, nullptr);
+
+                if (size <= 1)
+                    return std::string();
+
+                std::string result(
+                    static_cast<std::size_t>(size), '\0');
+
+                WideCharToMultiByte(
+                    CP_UTF8, 0, value.c_str(), -1,
+                    result.data(), size, nullptr, nullptr);
+
+                result.pop_back();
+                return result;
+            };
+
+        auto& history = state.overviewHistory;
+        const std::size_t index = history.index;
+
+        // Registrar todos los adaptadores presentes. El LUID evita mezclar
+        // muestras aunque Windows cambie el orden de la lista.
+        if (state.hasGpuSnapshot)
+        {
+            for (const GpuAdapterInfo& gpu :
+                 state.gpuSnapshot.gpus)
+            {
+                auto it = std::find_if(
+                    history.gpus.begin(),
+                    history.gpus.end(),
+                    [&gpu](
+                        const UI::Dashboard::Overview::GpuSeries& series)
+                    {
+                        return series.luidLowPart ==
+                                   gpu.luidLowPart &&
+                               series.luidHighPart ==
+                                   gpu.luidHighPart;
+                    });
+
+                if (it == history.gpus.end())
+                {
+                    UI::Dashboard::Overview::GpuSeries series{};
+
+                    series.luidLowPart = gpu.luidLowPart;
+                    series.luidHighPart = gpu.luidHighPart;
+                    series.name = adapterNameToUtf8(gpu.name);
+
+                    history.gpus.push_back(series);
+                }
+                else if (it->name.empty())
+                {
+                    it->name = adapterNameToUtf8(gpu.name);
+                }
+            }
+        }
+
+        history.cpu[index] = clampUsage(cpuUsage);
+        history.memory[index] = clampUsage(memoryUsage);
+
+        for (UI::Dashboard::Overview::GpuSeries& series :
+             history.gpus)
+        {
+            double gpuUsage = 0.0;
+
+            if (state.hasGpuSnapshot)
+            {
+                auto it = std::find_if(
+                    state.gpuSnapshot.gpus.begin(),
+                    state.gpuSnapshot.gpus.end(),
+                    [&series](const GpuAdapterInfo& gpu)
+                    {
+                        return gpu.luidLowPart ==
+                                   series.luidLowPart &&
+                               gpu.luidHighPart ==
+                                   series.luidHighPart;
+                    });
+
+                if (it != state.gpuSnapshot.gpus.end())
+                    gpuUsage = it->usagePercent;
+            }
+
+            series.usage[index] = clampUsage(gpuUsage);
+        }
+
+        history.index = (index + 1) % capacity;
+
+        if (history.count < capacity)
+            ++history.count;
+    }
+
+    void AppendProcessorHistorySamples(SharedState& state)
+    {
+        if (!state.hasCpuSnapshot)
+            return;
+
+        auto& histories = state.processorHistories;
+
+        for (const LogicalProcessorInfo& processor :
+             state.cpuSnapshot.logicalProcessors)
+        {
+            auto it = std::find_if(
+                histories.begin(),
+                histories.end(),
+                [&processor](
+                    const UI::Dashboard::Cpu::ProcessorChartHistory& h)
+                {
+                    return h.group == processor.processorGroup &&
+                           h.logicalIndex ==
+                               processor.logicalProcessorIndex;
+                });
+
+            if (it == histories.end())
+            {
+                UI::Dashboard::Cpu::ProcessorChartHistory history{};
+
+                history.group = processor.processorGroup;
+                history.logicalIndex =
+                    processor.logicalProcessorIndex;
+
+                histories.push_back(history);
+                it = std::prev(histories.end());
+            }
+
+            auto& history = *it;
+            const std::size_t index = history.historyIndex;
+
+            history.values[index] = static_cast<float>(
+                (std::max)(0.0, (std::min)(
+                    processor.usagePercent, 100.0)));
+
+            history.historyIndex =
+                (index + 1) % history.values.size();
+
+            if (history.historyCount < history.values.size())
+                ++history.historyCount;
+        }
+    }
 }
 
-// ============================================================
-// DESTRUCTOR
-// ============================================================
+std::uint32_t Window::PageDirtyMask(int page)
+{
+    using UI::Core::UiComponent;
+
+    switch (page)
+    {
+    case 0:
+        return UI::Core::Mask(UiComponent::OverviewPage);
+    case 1:
+        return UI::Core::Mask(UiComponent::CpuPage);
+    case 2:
+        return UI::Core::Mask(UiComponent::MemorySummary) |
+               UI::Core::Mask(UiComponent::MemoryChart) |
+               UI::Core::Mask(UiComponent::MemoryModules);
+    case 3:
+        return UI::Core::Mask(UiComponent::GpuPage);
+    case 4:
+        return UI::Core::Mask(UiComponent::ProcessPage);
+    default:
+        // Settings es estático: no tiene datos que invalidar.
+        return 0;
+    }
+}
+
+Window::Window()
+{
+    sharedState_ = std::make_shared<SharedState>();
+    themeSettings_ = UI::Theme::LoadSettings();
+
+    // Crear el archivo con los valores por defecto si no existe, para que
+    // se pueda editar directamente antes de abrir la aplicacion.
+    UI::Theme::SaveSettings(themeSettings_);
+}
 
 Window::~Window()
 {
     StopMonitoring();
+    ShutdownRegionRenderer();
 }
 
-// ============================================================
-// CREATE WINDOW
-// ============================================================
-
-bool Window::Create(int showCommand)
+bool Window::Create(HINSTANCE instance)
 {
-    WNDCLASSEXW wc{};
+    instance_ = instance;
 
+    WNDCLASSEXW wc{};
     wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.style = CS_CLASSDC;
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = instance_;
     wc.lpszClassName = ClassName;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = nullptr;
 
-    RegisterClassExW(&wc);
+    if (!RegisterClassExW(&wc))
+    {
+        if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+            return false;
+    }
 
     hwnd_ = CreateWindowExW(
         0,
@@ -72,8 +320,7 @@ bool Window::Create(int showCommand)
         nullptr,
         nullptr,
         instance_,
-        this
-    );
+        this);
 
     if (!hwnd_)
         return false;
@@ -86,23 +333,14 @@ bool Window::Create(int showCommand)
         hwnd_ = nullptr;
         return false;
     }
-    if (!direct2DRenderer_.Initialize(hwnd_))
-    {
-        MessageBoxW(
-            hwnd_,
-            L"No se pudo inicializar Direct2D.",
-            L"ProcessOptimizer",
-            MB_OK | MB_ICONERROR
-        );
 
-        renderer_.Shutdown();
-        DestroyWindow(hwnd_);
-        hwnd_ = nullptr;
-        return false;
-    }
+    // La inicialización del renderer de regiones se conecta
+    // cuando se verifiquen los getters reales de ImGuiRenderer.
+    regionRendererInitialized_ = false;
+
     ApplyTheme();
 
-    ShowWindow(hwnd_, showCommand);
+    ShowWindow(hwnd_, SW_SHOW);
     UpdateWindow(hwnd_);
 
     StartMonitoring();
@@ -110,38 +348,53 @@ bool Window::Create(int showCommand)
     return true;
 }
 
-// ============================================================
-// MAIN LOOP
-// ============================================================
 
-int Window::Run()
+
+void Window::Run()
 {
     MSG message{};
 
     using Clock = std::chrono::steady_clock;
 
     constexpr auto frameDuration =
-        std::chrono::microseconds(22222); // Máximo 45 FPS
+        std::chrono::microseconds(16667);
 
     auto lastFrame = Clock::now();
 
-    while (message.message != WM_QUIT)
+    bool continuousRendering = false;
+
+#ifdef _DEBUG
+    std::uint64_t framesRendered = 0;
+    std::uint64_t lastPresentCount =
+        renderer_.GetPresentCount();
+    auto lastStats = Clock::now();
+#endif
+
+    while (true)
     {
-        // Procesar mensajes de Windows.
-        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
+        while (PeekMessageW(
+            &message,
+            nullptr,
+            0,
+            0,
+            PM_REMOVE))
         {
             if (message.message == WM_QUIT)
-                break;
+                return;
 
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
 
-        if (message.message == WM_QUIT)
-            break;
+        const bool interacting = continuousRendering;
 
-        // Si no hay cambios, esperar sin renderizar.
-        if (!needsRedraw_.load(std::memory_order_acquire))
+        const bool inputPending =
+            uiInputPending_.exchange(
+                false, std::memory_order_acq_rel);
+
+        if (!needsRedraw_.load(std::memory_order_acquire) &&
+            !interacting &&
+            !inputPending)
         {
             MsgWaitForMultipleObjectsEx(
                 0,
@@ -153,524 +406,183 @@ int Window::Run()
             continue;
         }
 
-        const auto now = Clock::now();
+        const std::uint32_t pageMask =
+            PageDirtyMask(selectedPage_);
 
-        // Limitar a 45 FPS.
-        if (now - lastFrame < frameDuration)
+        if (!interacting && !inputPending)
         {
-            Sleep(1);
+            if ((pageMask != 0 &&
+                 !scheduler_.HasDirty(pageMask)) ||
+                pageMask == 0)
+            {
+                // Dato de otra página, o dato llegado mientras se muestra
+                // una página estática: conservamos los bits y no presentamos.
+                needsRedraw_.store(
+                    false, std::memory_order_release);
+
+                continue;
+            }
+        }
+
+        const auto now = Clock::now();
+        const auto elapsed = now - lastFrame;
+
+        // La UI se mantiene a 60 FPS. El ahorro de GPU no se hace bajando
+        // la tasa de entrada, sino evitando Present cuando el frame dibujado
+        // es idéntico (ver ImGuiRenderer::EndFrame).
+        if (elapsed < frameDuration)
+        {
+            const auto remaining = frameDuration - elapsed;
+
+            const DWORD waitMilliseconds =
+                static_cast<DWORD>(
+                    std::chrono::duration_cast<
+                    std::chrono::milliseconds>(
+                        remaining +
+                        std::chrono::microseconds(999)).count());
+
+            MsgWaitForMultipleObjectsEx(
+                0,
+                nullptr,
+                waitMilliseconds,
+                QS_ALLINPUT,
+                MWMO_INPUTAVAILABLE);
+
             continue;
         }
 
-        // Renderizar solamente si hay una actualización pendiente.
-        if (needsRedraw_.exchange(
-            false, std::memory_order_acq_rel))
-        {
-            renderer_.BeginFrame();
+        lastFrame = Clock::now();
 
-            RenderDashboard();
+        needsRedraw_.store(
+            false, std::memory_order_release);
 
-            renderer_.EndFrame();
+        if (pageMask != 0)
+            scheduler_.ConsumePage(pageMask);
 
-            lastFrame = Clock::now();
-        }
-    }
+        renderer_.BeginFrame();
 
-    StopMonitoring();
+        RenderDashboard();
 
-    return static_cast<int>(message.wParam);
-}
-
-// ============================================================
-// CPU HISTORY
-// ============================================================
-
-void Window::AddCpuSample(
-    SharedState& state,
-    float value)
-{
-    state.cpuHistory[state.historyIndex] = value;
-
-    state.historyIndex =
-        (state.historyIndex + 1) % HistorySize;
-
-    if (state.historyCount < HistorySize)
-    {
-        ++state.historyCount;
-    }
-}
-
-// ============================================================
-// MEMORY HISTORY
-// ============================================================
-
-void Window::AddMemorySample(float value)
-{
-    memoryHistory_[memoryHistoryIndex_] = value;
-
-    memoryHistoryIndex_ =
-        (memoryHistoryIndex_ + 1) % HistorySize;
-
-    if (memoryHistoryCount_ < HistorySize)
-        ++memoryHistoryCount_;
-}
-
-
-// ============================================================
-// GPU HISTORY
-// ============================================================
-
-void Window::AddGpuSample(const GpuSnapshot& snapshot)
-{
-    constexpr double BytesToMB = 1024.0 * 1024.0;
-
-    for (const auto& gpu : snapshot.gpus)
-    {
-        auto it = std::find_if(
-            gpuHistory_.adapters.begin(),
-            gpuHistory_.adapters.end(),
-            [&gpu](const UI::Dashboard::Gpu::GpuAdapterHistory& history)
-            {
-                return history.luidLowPart == gpu.luidLowPart &&
-                    history.luidHighPart == gpu.luidHighPart;
-            }
-        );
-
-        if (it == gpuHistory_.adapters.end())
-        {
-            gpuHistory_.adapters.emplace_back();
-
-            it = std::prev(gpuHistory_.adapters.end());
-
-            it->luidLowPart = gpu.luidLowPart;
-            it->luidHighPart = gpu.luidHighPart;
-        }
-
-        const std::size_t index = it->historyIndex;
-
-        it->usage[index] = static_cast<float>(gpu.usagePercent);
-        it->usage3D[index] = static_cast<float>(gpu.usage3D);
-        it->usageCopy[index] = static_cast<float>(gpu.usageCopy);
-        it->usageCompute[index] = static_cast<float>(gpu.usageCompute);
-        it->usageVideoDecode[index] = static_cast<float>(gpu.usageVideoDecode);
-        it->usageVideoEncode[index] = static_cast<float>(gpu.usageVideoEncode);
-        it->usageVideoProcessing[index] = static_cast<float>(gpu.usageVideoProcessing);
-
-        it->dedicatedMemory[index] = static_cast<float>(
-            gpu.processDedicatedMemoryUsedBytes / BytesToMB
-            );
-
-        it->sharedMemory[index] = static_cast<float>(
-            gpu.processSharedMemoryUsedBytes / BytesToMB
-            );
-
-        it->historyIndex = (it->historyIndex + 1) % UI::Dashboard::Gpu::GpuHistorySize;
-
-        if (it->historyCount < UI::Dashboard::Gpu::GpuHistorySize)
-            ++it->historyCount;
+        renderer_.EndFrame();
 
 #ifdef _DEBUG
-        std::ostringstream debug;
+        ++framesRendered;
 
-        debug << std::fixed << std::setprecision(2);
+        const auto statsNow = Clock::now();
 
-        debug << "[GPU HISTORY] "
-            << "GPU: " << gpu.index
-            << " | " << std::string(
-                gpu.name.begin(), gpu.name.end())
-            << " | Usage: " << gpu.usagePercent << "%"
-            << " | 3D: " << gpu.usage3D << "%"
-            << " | Copy: " << gpu.usageCopy << "%"
-            << " | Compute: " << gpu.usageCompute << "%"
-            << " | Index: " << it->historyIndex
-            << " | Count: " << it->historyCount
-            << "\n";
+        if (statsNow - lastStats >= std::chrono::seconds(2))
+        {
+            const std::uint64_t presentCount =
+                renderer_.GetPresentCount();
 
-        OutputDebugStringA(debug.str().c_str());
+            const std::uint64_t presents =
+                presentCount - lastPresentCount;
+
+            char text[160]{};
+
+            std::snprintf(
+                text,
+                sizeof(text),
+                "[ProcessOptimizer] frames/2s=%llu "
+                "presents/2s=%llu\n",
+                static_cast<unsigned long long>(framesRendered),
+                static_cast<unsigned long long>(presents));
+
+            OutputDebugStringA(text);
+
+            framesRendered = 0;
+            lastPresentCount = presentCount;
+            lastStats = statsNow;
+        }
 #endif
-    }
-}
-// ============================================================
-// PROCESSOR HISTORIES
-// ============================================================
 
-void Window::AddProcessorSamples(
-    SharedState& state,
-    const CpuSnapshot& snapshot)
-{
-    for (const auto& processor : snapshot.logicalProcessors)
-    {
-        auto it = std::find_if(
-            state.processorHistories.begin(),
-            state.processorHistories.end(),
-            [&processor](const auto& history)
-            {
-                return history.group == processor.processorGroup &&
-                    history.logicalIndex == processor.logicalProcessorIndex;
-            }
-        );
+        continuousRendering = IsInteractingWithUI();
 
-        if (it == state.processorHistories.end())
+        if (continuousRendering)
         {
-            state.processorHistories.emplace_back();
-
-            it = std::prev(
-                state.processorHistories.end()
-            );
-
-            it->group = processor.processorGroup;
-            it->logicalIndex = processor.logicalProcessorIndex;
-        }
-
-        it->values[it->historyIndex] =
-            static_cast<float>(processor.usagePercent);
-
-        it->historyIndex =
-            (it->historyIndex + 1) %
-            it->values.size();
-
-        if (it->historyCount < it->values.size())
-        {
-            ++it->historyCount;
+            needsRedraw_.store(
+                true, std::memory_order_release);
         }
     }
 }
 
-// ============================================================
-// START MONITORING
-// ============================================================
-void Window::StartMonitoring()
+
+bool Window::IsInteractingWithUI() const
 {
-    if (monitor_)
-        return;
+    if (!ImGui::GetCurrentContext())
+        return false;
 
-    monitor_ = std::make_unique<SystemMonitor>(events_);
+    const ImGuiIO& io = ImGui::GetIO();
 
-    cpuSubscriptionId_ = events_.Subscribe<CpuSnapshot>(
-        "CPU",
-        [this](const CpuSnapshot& snapshot)
-        {
-            {
-                std::lock_guard<std::mutex> lock(
-                    sharedState_->mutex
-                );
-
-                sharedState_->snapshot = snapshot;
-                sharedState_->hasSnapshot = true;
-
-                AddCpuSample(
-                    *sharedState_,
-                    static_cast<float>(snapshot.totalUsagePercent)
-                );
-
-                AddProcessorSamples(
-                    *sharedState_,
-                    snapshot
-                );
-            }
-
-            if (hwnd_)
-            {
-                PostMessageW(
-                    hwnd_,
-                    WM_DATA_UPDATED,
-                    0,
-                    0
-                );
-            }
-        }
-    );
-    memorySubscriptionId_ = events_.Subscribe<MemorySnapshot>(
-        "MEMORY",
-        [this](const MemorySnapshot& snapshot)
-        {
-            {
-                std::lock_guard<std::mutex> lock(
-                    sharedState_->mutex
-                );
-
-                memorySnapshot_ = snapshot;
-                hasMemorySnapshot_ = true;
-
-                AddMemorySample(
-                    static_cast<float>(snapshot.usagePercent)
-                );
-            }
-
-            if (hwnd_)
-            {
-                PostMessageW(
-                    hwnd_,
-                    WM_DATA_UPDATED,
-                    0,
-                    0
-                );
-            }
-        }
-    );
-    gpuSubscriptionId_ = events_.Subscribe<GpuSnapshot>(
-        "GPU",
-        [this](const GpuSnapshot& snapshot)
-        {
-            {
-                std::lock_guard<std::mutex> lock(
-                    sharedState_->mutex
-                );
-
-                gpuSnapshot_ = snapshot;
-                hasGpuSnapshot_ = true;
-
-                AddGpuSample(snapshot);
-            }
-
-            if (hwnd_)
-            {
-                PostMessageW(
-                    hwnd_,
-                    WM_DATA_UPDATED,
-                    0,
-                    0
-                );
-            }
-        }
-    );
-    processSubscriptionId_ = events_.Subscribe<ProcessSnapshot>(
-        "PROCESS",
-        [this](const ProcessSnapshot& snapshot)
-        {
-            {
-                std::lock_guard<std::mutex> lock(
-                    sharedState_->mutex
-                );
-
-                processSnapshot_ = snapshot;
-                hasProcessSnapshot_ = true;
-            }
-
-            if (hwnd_)
-            {
-                PostMessageW(
-                    hwnd_,
-                    WM_DATA_UPDATED,
-                    0,
-                    0
-                );
-            }
-        }
-    );
-    subscribed_ = true;
-
-    monitor_->Start();
+    // El hover NO entra aquí: se actualiza con los mensajes de entrada
+    // (WM_MOUSEMOVE invalida la página activa). Meterlo aquí realimentaba
+    // needsRedraw_ y mantenía 60 FPS con datos estáticos.
+    return
+        ImGui::IsAnyItemActive() ||
+        ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) ||
+        io.MouseDown[0] ||
+        io.MouseDown[1] ||
+        io.MouseDown[2] ||
+        io.MouseWheel != 0.0f ||
+        io.MouseWheelH != 0.0f;
 }
-
-// ============================================================
-// STOP MONITORING
-// ============================================================
-
-void Window::StopMonitoring()
-{
-    if (monitor_)
-    {
-        monitor_->Stop();
-        monitor_.reset();
-    }
-
-    if (subscribed_)
-    {
-        events_.Unsubscribe<CpuSnapshot>(
-            "CPU",
-            cpuSubscriptionId_
-        );
-
-        events_.Unsubscribe<MemorySnapshot>(
-            "MEMORY",
-            memorySubscriptionId_
-        );
-        events_.Unsubscribe<GpuSnapshot>(
-            "GPU",
-            gpuSubscriptionId_
-        );
-        events_.Unsubscribe<ProcessSnapshot>(
-            "PROCESS",
-            processSubscriptionId_
-        );
-        subscribed_ = false;
-    }
-}
-
-// ============================================================
-// THEME
-// ============================================================
-
-void Window::ApplyTheme()
-{
-    ImGuiStyle& style = ImGui::GetStyle();
-
-    style.WindowRounding = 8.0f;
-    style.ChildRounding = 8.0f;
-    style.FrameRounding = 6.0f;
-    style.PopupRounding = 6.0f;
-    style.ScrollbarRounding = 8.0f;
-    style.GrabRounding = 6.0f;
-    style.TabRounding = 6.0f;
-
-    style.WindowPadding = ImVec2(12, 12);
-    style.FramePadding = ImVec2(10, 6);
-    style.ItemSpacing = ImVec2(10, 10);
-
-    ImVec4* colors = style.Colors;
-
-    colors[ImGuiCol_WindowBg] =
-        ImVec4(0.055f, 0.065f, 0.085f, 1.0f);
-
-    colors[ImGuiCol_ChildBg] =
-        ImVec4(0.075f, 0.085f, 0.110f, 1.0f);
-
-    colors[ImGuiCol_PopupBg] =
-        ImVec4(0.080f, 0.090f, 0.115f, 1.0f);
-
-    colors[ImGuiCol_Border] =
-        ImVec4(0.15f, 0.17f, 0.21f, 1.0f);
-
-    colors[ImGuiCol_FrameBg] =
-        ImVec4(0.12f, 0.14f, 0.18f, 1.0f);
-
-    colors[ImGuiCol_FrameBgHovered] =
-        ImVec4(0.16f, 0.19f, 0.24f, 1.0f);
-
-    colors[ImGuiCol_FrameBgActive] =
-        ImVec4(0.19f, 0.23f, 0.29f, 1.0f);
-
-    colors[ImGuiCol_Button] =
-        ImVec4(0.12f, 0.15f, 0.19f, 1.0f);
-
-    colors[ImGuiCol_ButtonHovered] =
-        ImVec4(0.18f, 0.22f, 0.27f, 1.0f);
-
-    colors[ImGuiCol_ButtonActive] =
-        ImVec4(0.22f, 0.27f, 0.32f, 1.0f);
-
-    colors[ImGuiCol_Header] =
-        ImVec4(0.13f, 0.18f, 0.21f, 1.0f);
-
-    colors[ImGuiCol_HeaderHovered] =
-        ImVec4(0.17f, 0.24f, 0.27f, 1.0f);
-
-    colors[ImGuiCol_HeaderActive] =
-        ImVec4(0.20f, 0.29f, 0.31f, 1.0f);
-}
-
-// ============================================================
-// DASHBOARD
-// ============================================================
 
 void Window::RenderDashboard()
 {
-    CpuSnapshot snapshot{};
-    MemorySnapshot memorySnapshot{};
-    GpuSnapshot gpuSnapshot{};
-    ProcessSnapshot processSnapshot{};
-    bool hasProcessSnapshot = false;
-    UI::Dashboard::Gpu::GpuDashboardHistory gpuHistory{};
-    std::size_t cpuHistoryIndex = 0;
-    std::size_t cpuHistoryCount = 0;
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(
+        ImGui::GetIO().DisplaySize);
 
-    std::array<float, HistorySize> cpuHistory{};
-
-    std::vector<ProcessorChartHistory> processorHistories;
-
-    // RAM
-    std::array<float, HistorySize> memoryHistory{};
-    std::size_t memoryHistoryIndex = 0;
-    std::size_t memoryHistoryCount = 0;
-
-    bool hasMemorySnapshot = false;
-    bool hasGpuSnapshot = false;
-    {
-        std::lock_guard<std::mutex> lock(
-            sharedState_->mutex
-        );
-
-        // CPU
-        snapshot = sharedState_->snapshot;
-
-        cpuHistory = sharedState_->cpuHistory;
-        cpuHistoryIndex = sharedState_->historyIndex;
-        cpuHistoryCount = sharedState_->historyCount;
-
-        processorHistories = sharedState_->processorHistories;
-
-        // RAM
-        memorySnapshot = memorySnapshot_;
-        memoryHistory = memoryHistory_;
-        memoryHistoryIndex = memoryHistoryIndex_;
-        memoryHistoryCount = memoryHistoryCount_;
-        hasMemorySnapshot = hasMemorySnapshot_;
-
-        gpuSnapshot = gpuSnapshot_;
-        gpuHistory = gpuHistory_;
-        hasGpuSnapshot = hasGpuSnapshot_;
-        processSnapshot = processSnapshot_;
-        hasProcessSnapshot = hasProcessSnapshot_;
-    }
-
-    const ImGuiViewport* viewport =
-        ImGui::GetMainViewport();
-
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-
-    ImGui::SetNextWindowSize(viewport->WorkSize);
-
-    ImGui::Begin(
-        "MainDashboard",
-        nullptr,
+    ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar |
         ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoBringToFrontOnFocus
-    );
+        ImGuiWindowFlags_NoCollapse;
 
-    // ========================================================
-    // SIDEBAR
-    // ========================================================
+    ImGui::Begin(
+        "MainWindow",
+        nullptr,
+        flags);
 
+    // Sidebar.
     ImGui::BeginChild(
         "Sidebar",
-        ImVec2(210, 0),
-        true
-    );
+        ImVec2(220, 0),
+        true);
 
-    ImGui::Spacing();
+    const UI::Localization::Language language =
+        themeSettings_.language;
 
-    ImGui::TextColored(
-        ImVec4(0.30f, 0.85f, 0.72f, 1.0f),
-        "PROCESS OPTIMIZER"
-    );
+    UI::Widgets::Title(
+        Tr(language, UI::Localization::Text::AppTitle),
+        palette_);
 
-    ImGui::Spacing();
     ImGui::Separator();
-    ImGui::Spacing();
 
-    const char* pages[] =
+    struct PageEntry
     {
-        "Dashboard",
-        "CPU",
-        "RAM",
-        "GPU",
-        "Processes",
-        "Settings"
+        int index;
+        UI::Localization::Text label;
     };
 
-    for (int i = 0; i < IM_ARRAYSIZE(pages); ++i)
+    constexpr PageEntry pages[]{
+        {0, UI::Localization::Text::Dashboard},
+        {1, UI::Localization::Text::Cpu},
+        {2, UI::Localization::Text::Ram},
+        {3, UI::Localization::Text::Gpu},
+        {4, UI::Localization::Text::Processes},
+        {5, UI::Localization::Text::Settings}
+    };
+
+    for (const PageEntry& page : pages)
     {
-        if (ImGui::Selectable(
-            pages[i],
-            selectedPage_ == i,
-            0,
-            ImVec2(0, 38)))
+        if (UI::Widgets::ToggleButton(
+                Tr(language, page.label),
+                selectedPage_ == page.index,
+                palette_))
         {
-            selectedPage_ = i;
+            selectedPage_ = page.index;
+            InvalidateCurrentPage();
         }
     }
 
@@ -678,116 +590,802 @@ void Window::RenderDashboard()
 
     ImGui::SameLine();
 
-    // ========================================================
-    // MAIN CONTENT
-    // ========================================================
-
+    // Main content.
     ImGui::BeginChild(
         "MainContent",
         ImVec2(0, 0),
-        false
-    );
-    switch (selectedPage_)
-    {
-    case 0:
-        ImGui::Text("Dashboard");
-        ImGui::TextDisabled(
-            "System overview will be implemented here."
-        );
-        break;
+        false);
 
-    case 1:
-        UI::Dashboard::Cpu::CpuDashboard::Render(
-            snapshot,
-            cpuHistory,
-            cpuHistoryIndex,
-            cpuHistoryCount,
-            processorHistories,
-            showProcessorCharts_);
-        break;
-
-    case 2:
-        if (hasMemorySnapshot)
-        {
-            UI::Dashboard::Memory::MemoryDashboard::Render(
-                memorySnapshot,
-                memoryHistory,
-                memoryHistoryIndex,
-                memoryHistoryCount
-            );
-        }
-        else
-        {
-            ImGui::TextColored(
-                ImVec4(0.30f, 0.85f, 0.72f, 1.0f),
-                "MEMORY MONITOR"
-            );
-
-            ImGui::TextDisabled(
-                "Waiting for memory information..."
-            );
-        }
-        break;
-
-    case 3:
-        if (hasGpuSnapshot)
-        {
-            UI::Dashboard::Gpu::GpuDashboard::Render(
-                gpuSnapshot,
-                gpuHistory
-            );
-        }
-        else
-        {
-            ImGui::TextColored(
-                ImVec4(0.30f, 0.85f, 0.72f, 1.0f),
-                "GPU MONITOR"
-            );
-
-            ImGui::TextDisabled(
-                "Waiting for GPU information..."
-            );
-        }
-        break;
-
-    case 4:
-        if (hasProcessSnapshot)
-        {
-            processDashboard_.Render(processSnapshot);
-        }
-        else
-        {
-            ImGui::TextColored(
-                ImVec4(0.30f, 0.85f, 0.72f, 1.0f),
-                "PROCESS MONITOR"
-            );
-
-            ImGui::TextDisabled(
-                "Waiting for process information..."
-            );
-        }
-        break;
-
-    case 5:
-        ImGui::Text("Settings");
-        ImGui::TextDisabled(
-            "Application settings will be implemented here."
-        );
-        break;
-
-    default:
-        selectedPage_ = 0;
-        break;
-    }
+    RenderRegionContent();
 
     ImGui::EndChild();
 
     ImGui::End();
 }
 
-// ============================================================
-// WINDOW PROCEDURE
-// ============================================================
+void Window::RenderRegionContent()
+{
+    switch (selectedPage_)
+    {
+    case 0:
+    {
+        CpuSnapshot cpu{};
+        MemorySnapshot memory{};
+        GpuSnapshot gpu{};
+        ProcessSnapshot processes{};
+        UI::Dashboard::Overview::CombinedHistory history{};
+
+        bool hasCpu = false;
+        bool hasMemory = false;
+        bool hasGpu = false;
+        bool hasProcesses = false;
+
+        {
+            std::lock_guard<std::mutex> lock(
+                sharedState_->mutex);
+
+            hasCpu = sharedState_->hasCpuSnapshot;
+            hasMemory = sharedState_->hasMemorySnapshot;
+            hasGpu = sharedState_->hasGpuSnapshot;
+            hasProcesses = sharedState_->hasProcessSnapshot;
+
+            if (hasCpu)
+                cpu = sharedState_->cpuSnapshot;
+
+            if (hasMemory)
+                memory = sharedState_->memorySnapshot;
+
+            if (hasGpu)
+                gpu = sharedState_->gpuSnapshot;
+
+            if (hasProcesses)
+                processes = sharedState_->processSnapshot;
+
+            history = sharedState_->overviewHistory;
+        }
+
+        UI::Dashboard::Overview::OverviewDashboard::Render(
+            hasCpu ? &cpu : nullptr,
+            hasMemory ? &memory : nullptr,
+            hasGpu ? &gpu : nullptr,
+            hasProcesses ? &processes : nullptr,
+            history,
+            palette_,
+            themeSettings_.language);
+
+        break;
+    }
+
+    case 1:
+    {
+        CpuSnapshot snapshot{};
+
+        std::array<
+            float,
+            UI::Dashboard::Cpu::HistorySize
+        > history{};
+
+        std::vector<
+            UI::Dashboard::Cpu::ProcessorChartHistory
+        > processorHistories;
+
+        std::size_t historyIndex = 0;
+        std::size_t historyCount = 0;
+
+        bool available = false;
+
+        {
+            std::lock_guard<std::mutex> lock(
+                sharedState_->mutex);
+
+            available = sharedState_->hasCpuSnapshot;
+
+            if (available)
+            {
+                snapshot = sharedState_->cpuSnapshot;
+                history = sharedState_->cpuHistory;
+
+                historyIndex = sharedState_->cpuHistoryIndex;
+                historyCount = sharedState_->cpuHistoryCount;
+
+                processorHistories =
+                    sharedState_->processorHistories;
+            }
+        }
+
+        if (available)
+        {
+            UI::Dashboard::Cpu::CpuDashboard::Render(
+                snapshot,
+                history,
+                historyIndex,
+                historyCount,
+                processorHistories,
+                showProcessorCharts_,
+                palette_,
+                themeSettings_.language);
+        }
+        else
+        {
+            ImGui::TextDisabled(
+                "%s",
+                Tr(themeSettings_.language,
+                   UI::Localization::Text::WaitingCpu));
+        }
+
+        break;
+    }
+
+    case 2:
+    {
+        MemorySnapshot snapshot{};
+
+        std::array<
+            float,
+            SharedState::MemoryHistorySize
+        > history{};
+
+        std::size_t historyIndex = 0;
+        std::size_t historyCount = 0;
+
+        bool available = false;
+
+        {
+            std::lock_guard<std::mutex> lock(
+                sharedState_->mutex);
+
+            available = sharedState_->hasMemorySnapshot;
+
+            if (available)
+            {
+                snapshot = sharedState_->memorySnapshot;
+                history = sharedState_->memoryHistory;
+                historyIndex =
+                    sharedState_->memoryHistoryIndex;
+                historyCount =
+                    sharedState_->memoryHistoryCount;
+            }
+        }
+
+        if (available)
+        {
+            UI::Dashboard::Memory::MemoryDashboard::Render(
+                snapshot,
+                std::span<const float>(
+                    history.data(), history.size()),
+                historyIndex,
+                historyCount);
+        }
+        else
+        {
+            ImGui::TextDisabled(
+                "%s",
+                Tr(themeSettings_.language,
+                   UI::Localization::Text::WaitingMemory));
+        }
+
+        break;
+    }
+
+    case 3:
+    {
+        GpuSnapshot snapshot{};
+        UI::Dashboard::Gpu::GpuDashboardHistory history{};
+
+        bool available = false;
+
+        {
+            std::lock_guard<std::mutex> lock(
+                sharedState_->mutex);
+
+            available = sharedState_->hasGpuSnapshot;
+
+            if (available)
+            {
+                snapshot = sharedState_->gpuSnapshot;
+                history = sharedState_->gpuHistory;
+            }
+        }
+
+        if (available)
+        {
+            UI::Dashboard::Gpu::GpuDashboard::Render(
+                snapshot, history);
+        }
+        else
+        {
+            ImGui::TextDisabled(
+                "%s",
+                Tr(themeSettings_.language,
+                   UI::Localization::Text::WaitingGpu));
+        }
+
+        break;
+    }
+
+    case 4:
+    {
+        ProcessSnapshot snapshot{};
+
+        bool available = false;
+
+        {
+            std::lock_guard<std::mutex> lock(
+                sharedState_->mutex);
+
+            available = sharedState_->hasProcessSnapshot;
+
+            if (available)
+                snapshot = sharedState_->processSnapshot;
+        }
+
+        if (available)
+        {
+            processDashboard_.Render(snapshot);
+        }
+        else
+        {
+            ImGui::TextDisabled(
+                "%s",
+                Tr(themeSettings_.language,
+                   UI::Localization::Text::WaitingProcesses));
+        }
+
+        break;
+    }
+
+    case 5:
+    {
+        UI::Theme::AppSettings settings =
+            themeSettings_;
+
+        UI::Screens::Settings::SettingsScreen::Render(
+            settings,
+            palette_,
+            themeSettings_.language);
+
+        SetAppSettings(settings);
+        break;
+    }
+
+    default:
+        ImGui::Text("Unknown page");
+        break;
+    }
+}
+
+
+bool Window::InitializeRegionRenderer()
+{
+    OutputDebugStringA("\n========== REGION RENDERER INIT ==========\n");
+
+    if (regionRendererInitialized_)
+    {
+        OutputDebugStringA("[OK] RegionRenderer ya estaba inicializado.\n");
+        return true;
+    }
+
+    // 1. Comprobar renderer principal.
+    if (!renderer_.IsInitialized())
+    {
+        OutputDebugStringA("[ERROR] ImGuiRenderer no esta inicializado.\n");
+        return false;
+    }
+
+    OutputDebugStringA("[OK] ImGuiRenderer inicializado.\n");
+
+    // 2. Comprobar dispositivo DirectX.
+    ID3D11Device* device = renderer_.GetDevice();
+
+    if (!device)
+    {
+        OutputDebugStringA("[ERROR] GetDevice() devuelve nullptr.\n");
+        return false;
+    }
+
+    OutputDebugStringA("[OK] Dispositivo D3D11 disponible.\n");
+
+    // 3. Comprobar contexto DirectX.
+    ID3D11DeviceContext* context = renderer_.GetDeviceContext();
+
+    if (!context)
+    {
+        OutputDebugStringA("[ERROR] GetDeviceContext() devuelve nullptr.\n");
+        return false;
+    }
+
+    OutputDebugStringA("[OK] Contexto D3D11 disponible.\n");
+
+    // 4. Comprobar contexto ImGui.
+    ImGuiContext* imguiContext = renderer_.GetImGuiContext();
+
+    if (!imguiContext)
+    {
+        OutputDebugStringA("[ERROR] GetImGuiContext() devuelve nullptr.\n");
+        return false;
+    }
+
+    OutputDebugStringA("[OK] Contexto ImGui disponible.\n");
+
+    // 5. Inicializar RegionRenderer.
+    OutputDebugStringA("[INFO] Inicializando RegionRenderer...\n");
+
+    if (!regionRenderer_.Initialize(device, context, imguiContext))
+    {
+        OutputDebugStringA("[ERROR] RegionRenderer::Initialize fallo.\n");
+        return false;
+    }
+
+    OutputDebugStringA("[OK] RegionRenderer inicializado.\n");
+
+    // 6. Crear region CPU.
+    OutputDebugStringA("[INFO] Creando region CPU...\n");
+
+    if (!regionRenderer_.CreateRegion("CPU"))
+    {
+        OutputDebugStringA("[ERROR] No se pudo crear region CPU.\n");
+        regionRenderer_.Shutdown();
+        return false;
+    }
+
+    OutputDebugStringA("[OK] Region CPU creada.\n");
+
+    // 7. Crear region Memory.
+    OutputDebugStringA("[INFO] Creando region Memory...\n");
+
+    if (!regionRenderer_.CreateRegion("Memory"))
+    {
+        OutputDebugStringA("[ERROR] No se pudo crear region Memory.\n");
+        regionRenderer_.Shutdown();
+        return false;
+    }
+
+    OutputDebugStringA("[OK] Region Memory creada.\n");
+
+    // 8. Crear region GPU.
+    OutputDebugStringA("[INFO] Creando region GPU...\n");
+
+    if (!regionRenderer_.CreateRegion("GPU"))
+    {
+        OutputDebugStringA("[ERROR] No se pudo crear region GPU.\n");
+        regionRenderer_.Shutdown();
+        return false;
+    }
+
+    OutputDebugStringA("[OK] Region GPU creada.\n");
+
+    // 9. Crear region Processes.
+    OutputDebugStringA("[INFO] Creando region Processes...\n");
+
+    if (!regionRenderer_.CreateRegion("Processes"))
+    {
+        OutputDebugStringA("[ERROR] No se pudo crear region Processes.\n");
+        regionRenderer_.Shutdown();
+        return false;
+    }
+
+    OutputDebugStringA("[OK] Region Processes creada.\n");
+
+    regionRendererInitialized_ = true;
+
+    OutputDebugStringA("[SUCCESS] RegionRenderer completamente inicializado.\n");
+    OutputDebugStringA("==========================================\n");
+
+    return true;
+}
+
+void Window::ShutdownRegionRenderer()
+{
+    if (!regionRendererInitialized_)
+        return;
+
+    regionRenderer_.DestroyRegion("CPU");
+    regionRenderer_.DestroyRegion("Memory");
+    regionRenderer_.DestroyRegion("GPU");
+    regionRenderer_.DestroyRegion("Processes");
+
+    regionRenderer_.Shutdown();
+
+    regionRendererInitialized_ = false;
+}
+
+void Window::InvalidateCurrentPage()
+{
+    scheduler_.Invalidate(PageDirtyMask(selectedPage_));
+
+    uiInputPending_.store(true, std::memory_order_release);
+    needsRedraw_.store(true, std::memory_order_release);
+}
+
+void Window::MarkRegionDirty()
+{
+    // Solo para cambios globales (resize, tema, fuentes). Los datos de
+    // monitorización invalidan componentes concretos.
+    regionDirty_ = true;
+    scheduler_.InvalidateAll();
+
+    uiInputPending_.store(true, std::memory_order_release);
+    needsRedraw_.store(true, std::memory_order_release);
+}
+
+void Window::RequestFrame()
+{
+    needsRedraw_.store(true, std::memory_order_release);
+
+    const HWND hwnd = sharedState_->hwnd;
+
+    if (hwnd)
+    {
+        PostMessageW(
+            hwnd,
+            WM_DATA_UPDATED,
+            0,
+            0);
+    }
+}
+
+void Window::ApplyTheme()
+{
+    palette_ = UI::Theme::ResolvePalette(themeSettings_);
+    UI::Theme::Apply(palette_);
+
+    scheduler_.Invalidate(UI::Core::UiComponent::All);
+    RequestFrame();
+}
+
+void Window::OnSystemThemeChanged()
+{
+    if (themeSettings_.mode != UI::Theme::ThemeMode::System)
+        return;
+
+    ApplyTheme();
+}
+
+void Window::SetAppSettings(
+    const UI::Theme::AppSettings& settings)
+{
+    if (settings.mode == themeSettings_.mode &&
+        settings.design == themeSettings_.design &&
+        settings.language == themeSettings_.language)
+    {
+        return;
+    }
+
+    const bool appearanceChanged =
+        settings.mode != themeSettings_.mode ||
+        settings.design != themeSettings_.design;
+
+    themeSettings_ = settings;
+    UI::Theme::SaveSettings(themeSettings_);
+
+    if (appearanceChanged)
+        ApplyTheme();
+    else
+    {
+        scheduler_.Invalidate(UI::Core::UiComponent::All);
+        RequestFrame();
+    }
+}
+
+const UI::Theme::AppSettings& Window::AppSettingsRef() const
+{
+    return themeSettings_;
+}
+
+const UI::Theme::UiPalette& Window::CurrentPalette() const
+{
+    return palette_;
+}
+
+void Window::AddCpuSample(float value)
+{
+    cpuHistory_[cpuHistoryIndex_] = value;
+    cpuHistoryIndex_ =
+        (cpuHistoryIndex_ + 1) % HistorySize;
+
+    cpuHistoryCount_ =
+        (std::min)(cpuHistoryCount_ + 1, HistorySize);
+
+    MarkRegionDirty();
+}
+
+void Window::AddMemorySample(float value)
+{
+    memoryHistory_[memoryHistoryIndex_] = value;
+    memoryHistoryIndex_ =
+        (memoryHistoryIndex_ + 1) % HistorySize;
+
+    memoryHistoryCount_ =
+        (std::min)(memoryHistoryCount_ + 1, HistorySize);
+
+    MarkRegionDirty();
+}
+
+void Window::AddGpuSample(float value)
+{
+    gpuHistory_[gpuHistoryIndex_] = value;
+    gpuHistoryIndex_ =
+        (gpuHistoryIndex_ + 1) % HistorySize;
+
+    gpuHistoryCount_ =
+        (std::min)(gpuHistoryCount_ + 1, HistorySize);
+
+    MarkRegionDirty();
+}
+
+void Window::StartMonitoring()
+{
+    if (subscribed_)
+        return;
+
+    monitor_ = std::make_shared<SystemMonitor>(events_);
+
+    cpuSubscription_ =
+        events_.Subscribe<CpuSnapshot>(
+            "CPU",
+            [this](const CpuSnapshot& snapshot)
+            {
+                bool changed = false;
+
+                {
+                    std::lock_guard<std::mutex> lock(
+                        sharedState_->mutex);
+
+                    changed =
+                        !sharedState_->hasCpuSnapshot ||
+                        std::abs(
+                            sharedState_->cpuSnapshot
+                                .totalUsagePercent -
+                            snapshot.totalUsagePercent) > 0.001;
+
+                    // El uso total puede repetirse mientras cambian algunos nucleos.
+                    if (!changed)
+                    {
+                        const auto& previous =
+                            sharedState_->cpuSnapshot
+                                .logicalProcessors;
+
+                        if (previous.size() !=
+                            snapshot.logicalProcessors.size())
+                        {
+                            changed = true;
+                        }
+                        else
+                        {
+                            for (std::size_t i = 0;
+                                 i < previous.size();
+                                 ++i)
+                            {
+                                if (std::abs(
+                                        previous[i].usagePercent -
+                                        snapshot.logicalProcessors[i]
+                                            .usagePercent) > 0.001)
+                                {
+                                    changed = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    sharedState_->cpuSnapshot = snapshot;
+                    sharedState_->hasCpuSnapshot = true;
+
+                    // El historial de cada procesador logico se alimenta en
+                    // cada snapshot, aunque el uso total no haya cambiado.
+                    AppendProcessorHistorySamples(*sharedState_);
+
+                    if (changed)
+                    {
+                        const float usage =
+                            static_cast<float>(
+                                snapshot.totalUsagePercent);
+
+                        sharedState_->cpuHistory[
+                            sharedState_->cpuHistoryIndex] = usage;
+
+                        sharedState_->cpuHistoryIndex =
+                            (sharedState_->cpuHistoryIndex + 1) %
+                            sharedState_->cpuHistory.size();
+
+                        if (sharedState_->cpuHistoryCount <
+                            sharedState_->cpuHistory.size())
+                        {
+                            ++sharedState_->cpuHistoryCount;
+                        }
+
+                        AppendOverviewSample(*sharedState_);
+                    }
+                }
+
+                if (changed)
+                {
+                    using UI::Core::UiComponent;
+                    scheduler_.Invalidate(
+                        UI::Core::Mask(UiComponent::CpuPage) |
+                        UI::Core::Mask(UiComponent::OverviewPage));
+                    RequestFrame();
+                }
+            });
+
+    memorySubscription_ =
+        events_.Subscribe<MemorySnapshot>(
+            "MEMORY",
+            [this](const MemorySnapshot& snapshot)
+            {
+                bool changed = false;
+
+                {
+                    std::lock_guard<std::mutex> lock(
+                        sharedState_->mutex);
+
+                    changed =
+                        !sharedState_->hasMemorySnapshot ||
+                        std::abs(
+                            sharedState_->memorySnapshot
+                                .usagePercent -
+                            snapshot.usagePercent) > 0.001;
+
+                    sharedState_->memorySnapshot = snapshot;
+                    sharedState_->hasMemorySnapshot = true;
+
+                    if (changed)
+                    {
+                        const float usage =
+                            static_cast<float>(
+                                snapshot.usagePercent);
+
+                        sharedState_->memoryHistory[
+                            sharedState_->memoryHistoryIndex] = usage;
+
+                        sharedState_->memoryHistoryIndex =
+                            (sharedState_->memoryHistoryIndex + 1) %
+                            sharedState_->memoryHistory.size();
+
+                        if (sharedState_->memoryHistoryCount <
+                            sharedState_->memoryHistory.size())
+                        {
+                            ++sharedState_->memoryHistoryCount;
+                        }
+
+                        AppendOverviewSample(*sharedState_);
+                    }
+                }
+
+                if (changed)
+                {
+                    using UI::Core::UiComponent;
+                    scheduler_.Invalidate(
+                        UI::Core::Mask(UiComponent::MemorySummary) |
+                        UI::Core::Mask(UiComponent::MemoryChart) |
+                        UI::Core::Mask(UiComponent::MemoryModules) |
+                        UI::Core::Mask(UiComponent::OverviewPage));
+                    RequestFrame();
+                }
+            });
+
+    gpuSubscription_ =
+        events_.Subscribe<GpuSnapshot>(
+            "GPU",
+            [this](const GpuSnapshot& snapshot)
+            {
+                double currentMax = -1.0;
+
+                for (const GpuAdapterInfo& gpu : snapshot.gpus)
+                {
+                    currentMax = (std::max)(
+                        currentMax, gpu.usagePercent);
+                }
+
+                bool changed = false;
+
+                {
+                    std::lock_guard<std::mutex> lock(
+                        sharedState_->mutex);
+
+                    if (!sharedState_->hasGpuSnapshot)
+                    {
+                        changed = true;
+                    }
+                    else
+                    {
+                        double previousMax = -1.0;
+
+                        for (const GpuAdapterInfo& gpu :
+                             sharedState_->gpuSnapshot.gpus)
+                        {
+                            previousMax = (std::max)(
+                                previousMax, gpu.usagePercent);
+                        }
+
+                        changed =
+                            previousMax < 0.0 ||
+                            currentMax < 0.0 ||
+                            std::abs(previousMax - currentMax) >
+                                0.01;
+                    }
+
+                    sharedState_->gpuSnapshot = snapshot;
+                    sharedState_->hasGpuSnapshot = true;
+
+                    if (changed)
+                    {
+                        AppendGpuHistorySample(
+                            sharedState_->gpuHistory,
+                            snapshot);
+
+                        AppendOverviewSample(*sharedState_);
+                    }
+                }
+
+                if (changed)
+                {
+                    using UI::Core::UiComponent;
+                    scheduler_.Invalidate(
+                        UI::Core::Mask(UiComponent::GpuPage) |
+                        UI::Core::Mask(UiComponent::OverviewPage));
+                    RequestFrame();
+                }
+            });
+
+    processSubscription_ =
+        events_.Subscribe<ProcessSnapshot>(
+            "PROCESS",
+            [this](const ProcessSnapshot& snapshot)
+            {
+                {
+                    std::lock_guard<std::mutex> lock(
+                        sharedState_->mutex);
+
+                    sharedState_->processSnapshot = snapshot;
+                    sharedState_->hasProcessSnapshot = true;
+                }
+
+                using UI::Core::UiComponent;
+                scheduler_.Invalidate(
+                    UI::Core::Mask(UiComponent::ProcessPage) |
+                    UI::Core::Mask(UiComponent::OverviewPage));
+                RequestFrame();
+            });
+
+    subscribed_ = true;
+
+    monitor_->Start();
+}
+
+
+void Window::StopMonitoring()
+{
+    if (monitor_)
+    {
+        monitor_->Stop();
+    }
+
+    if (subscribed_)
+    {
+        events_.Unsubscribe<CpuSnapshot>(
+            "CPU",
+            cpuSubscription_);
+
+        events_.Unsubscribe<MemorySnapshot>(
+            "MEMORY",
+            memorySubscription_);
+
+        events_.Unsubscribe<GpuSnapshot>(
+            "GPU",
+            gpuSubscription_);
+
+        events_.Unsubscribe<ProcessSnapshot>(
+            "PROCESS",
+            processSubscription_);
+    }
+
+    subscribed_ = false;
+
+    monitor_.reset();
+}
+
+
 
 LRESULT CALLBACK Window::WindowProc(
     HWND hwnd,
@@ -795,98 +1393,123 @@ LRESULT CALLBACK Window::WindowProc(
     WPARAM wParam,
     LPARAM lParam)
 {
-    Window* window = nullptr;
+    Window* window = reinterpret_cast<Window*>(
+        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
     if (message == WM_NCCREATE)
     {
-        const auto* createStruct =
+        auto* createStruct =
             reinterpret_cast<CREATESTRUCTW*>(lParam);
 
-        window = static_cast<Window*>(createStruct->lpCreateParams);
+        window = static_cast<Window*>(
+            createStruct->lpCreateParams);
 
         SetWindowLongPtrW(
             hwnd,
             GWLP_USERDATA,
             reinterpret_cast<LONG_PTR>(window));
-
-        window->hwnd_ = hwnd;
     }
-    else
+
+    if (!window)
     {
-        window = reinterpret_cast<Window*>(
-            GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        return DefWindowProcW(
+            hwnd, message, wParam, lParam);
     }
 
-    const bool imguiHandled =
-        ImGui_ImplWin32_WndProcHandler(
-            hwnd, message, wParam, lParam) != 0;
+    // Entrada gestionada por Dear ImGui.
+    if (ImGui::GetCurrentContext())
+    {
+        if (ImGui_ImplWin32_WndProcHandler(
+            hwnd, message, wParam, lParam))
+        {
+            return TRUE;
+        }
+    }
 
     switch (message)
     {
     case WM_DATA_UPDATED:
     {
-        if (window)
+        // El callback ya invalidó los componentes concretos. Aquí solo
+        // despertamos el bucle; no marcamos toda la UI como sucia.
+        window->needsRedraw_.store(
+            true, std::memory_order_release);
+        return 0;
+    }
+
+    case WM_SIZE:
+    {
+        if (wParam != SIZE_MINIMIZED)
         {
-            window->needsRedraw_.store(
-                true, std::memory_order_release);
+            const UINT width = LOWORD(lParam);
+            const UINT height = HIWORD(lParam);
+
+            if (width > 0 && height > 0)
+            {
+                window->renderer_.Resize(width, height);
+                window->MarkRegionDirty();
+            }
         }
 
         return 0;
     }
 
+    // Entrada del usuario: solicitar redibujado a 60 FPS.
+    case WM_MOUSEMOVE:
+    case WM_MOUSEWHEEL:
+    case WM_MOUSEHWHEEL:
     case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
     case WM_LBUTTONDBLCLK:
     case WM_RBUTTONDOWN:
     case WM_RBUTTONUP:
+    case WM_RBUTTONDBLCLK:
     case WM_MBUTTONDOWN:
     case WM_MBUTTONUP:
-    case WM_MOUSEWHEEL:
-    case WM_MOUSEMOVE:
-    case WM_MOUSEHWHEEL:
+    case WM_XBUTTONDOWN:
+    case WM_XBUTTONUP:
     case WM_KEYDOWN:
     case WM_KEYUP:
+    case WM_SYSKEYDOWN:
+    case WM_SYSKEYUP:
     case WM_CHAR:
     case WM_SETFOCUS:
     case WM_KILLFOCUS:
-    case WM_CAPTURECHANGED:
     {
-        if (window)
-        {
-            window->needsRedraw_.store(
-                true, std::memory_order_release);
-        }
-
+        window->InvalidateCurrentPage();
         break;
     }
 
-    case WM_SIZE:
+    case WM_SETTINGCHANGE:
     {
-        if (window && wParam != SIZE_MINIMIZED)
-        {
-            const UINT width = LOWORD(lParam);
-            const UINT height = HIWORD(lParam);
-
-            window->renderer_.Resize(width, height);
-
-            window->needsRedraw_.store(
-                true, std::memory_order_release);
-        }
-
-        return 0;
+        // Windows avisa cuando cambia el tema del sistema (AppsUseLightTheme).
+        window->OnSystemThemeChanged();
+        break;
     }
+
+    case WM_ERASEBKGND:
+        return 1;
+
+    case WM_CLOSE:
+        DestroyWindow(hwnd);
+        return 0;
 
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
 
     case WM_NCDESTROY:
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-        break;
+    {
+        SetWindowLongPtrW(
+            hwnd,
+            GWLP_USERDATA,
+            0);
+
+        return DefWindowProcW(
+            hwnd, message, wParam, lParam);
+    }
     }
 
-    if (imguiHandled)
-        return 1;
-
-    return DefWindowProcW(hwnd, message, wParam, lParam);
+    return DefWindowProcW(
+        hwnd, message, wParam, lParam);
 }

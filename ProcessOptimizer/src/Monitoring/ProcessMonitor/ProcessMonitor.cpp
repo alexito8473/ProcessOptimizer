@@ -8,28 +8,56 @@ ProcessMonitor::~ProcessMonitor()
 {
     Shutdown();
 }
-
 bool ProcessMonitor::Update()
 {
+    OutputDebugStringA("\n[ProcessMonitor] Iniciando Update...\n");
+
     try
     {
+        // 1. Enumerar procesos.
+        OutputDebugStringA("[ProcessMonitor] Enumerando procesos...\n");
+
         m_snapshot = ProcessEnumerator::Enumerate();
 
-        // Actualizar CPU y memoria de los procesos.
+        OutputDebugStringA("[ProcessMonitor] Enumeracion completada.\n");
+
+        // 2. Actualizar CPU y memoria.
+        OutputDebugStringA("[ProcessMonitor] Actualizando rendimiento...\n");
+
         m_performance.Update(m_snapshot);
 
-        // Inicializar GPU cuando sea necesario.
+        OutputDebugStringA("[ProcessMonitor] Rendimiento actualizado.\n");
+
+        // 3. Inicializar GPU.
         if (!m_processGpu.IsInitialized())
         {
+            OutputDebugStringA("[ProcessMonitor] Inicializando ProcessGpu...\n");
+
             if (!m_processGpu.Initialize())
+            {
+                OutputDebugStringA(
+                    "[ERROR] ProcessGpu::Initialize() devolvio false.\n");
+
                 return false;
+            }
+
+            OutputDebugStringA("[ProcessMonitor] ProcessGpu inicializado.\n");
         }
 
-        // Actualizar utilización GPU por proceso.
-        if (!m_processGpu.Update())
-            return false;
+        // 4. Actualizar GPU.
+        OutputDebugStringA("[ProcessMonitor] Actualizando GPU...\n");
 
-        // Crear índice de procesos por PID.
+        if (!m_processGpu.Update())
+        {
+            OutputDebugStringA(
+                "[ERROR] ProcessGpu::Update() devolvio false.\n");
+
+            return false;
+        }
+
+        OutputDebugStringA("[ProcessMonitor] GPU actualizado.\n");
+
+        // 5. Crear índice de procesos.
         std::unordered_map<DWORD, ProcessInfo*> processById;
 
         processById.reserve(m_snapshot.processes.size());
@@ -45,7 +73,7 @@ bool ProcessMonitor::Update()
             );
         }
 
-        // Asociar utilización GPU con cada proceso.
+        // 6. Asociar utilización GPU.
         for (const ProcessGpuEngineUsage& engine : m_processGpu.GetUsage())
         {
             auto it = processById.find(engine.processId);
@@ -62,10 +90,24 @@ bool ProcessMonitor::Update()
             }
         }
 
+        OutputDebugStringA(
+            "[ProcessMonitor] Update completado correctamente.\n");
+
         return true;
+    }
+    catch (const std::exception& e)
+    {
+        OutputDebugStringA("[ERROR] Excepcion en ProcessMonitor: ");
+        OutputDebugStringA(e.what());
+        OutputDebugStringA("\n");
+
+        return false;
     }
     catch (...)
     {
+        OutputDebugStringA(
+            "[ERROR] Excepcion desconocida en ProcessMonitor.\n");
+
         return false;
     }
 }

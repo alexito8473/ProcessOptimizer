@@ -1,0 +1,119 @@
+#pragma once
+
+#include <cstddef>
+
+namespace UI::Localization
+{
+    enum class Language : int
+    {
+        English = 0,
+        Spanish = 1
+    };
+
+    enum class Text : std::size_t
+    {
+        AppTitle,
+        Dashboard,
+        Cpu,
+        Ram,
+        Gpu,
+        Processes,
+        Settings,
+
+        Overview,
+        LiveSnapshot,
+        CombinedUsage,
+        AllGpus,
+        KeyDetails,
+        TopProcesses,
+        ByLoad,
+        CpuUsage,
+        RamUsage,
+        GpuUsage,
+        ProcessCount,
+        WaitingCpu,
+        WaitingMemory,
+        WaitingGpu,
+        WaitingProcesses,
+        WaitingSamples,
+        Name,
+        Pid,
+        Memory,
+        Dedicated,
+        Top,
+        CpuShort,
+        GpuShort,
+        UsagePercent,
+        Temperature,
+        Power,
+        PhysicalCores,
+        LogicalProcessorsCard,
+        Sockets,
+        EstimatedFrequency,
+        Speed,
+        UsedOf,
+        Available,
+        Slots,
+        MonitoredProcesses,
+        TotalUsage,
+        EstimatedFrequencyLabel,
+        DetectedPhysicalCores,
+        AvailableLogicalProcessors,
+        DetectedPackages,
+        ProcessorTopology,
+        PhysicalLogicalConfig,
+        FrequencyTitle,
+        FrequencyDesc,
+        CacheTitle,
+        CacheDesc,
+        VirtualizationTitle,
+        VirtualizationDesc,
+        SystemActivityTitle,
+        SystemActivityDesc,
+
+        CpuMonitor,
+        RealTimeCpu,
+        PerformanceHistory,
+        CpuUtilization,
+        LogicalProcessors,
+        IndividualUtilization,
+        Bars,
+        MiniCharts,
+        HardwareInformation,
+        CollectingData,
+        NoLogicalProcessors,
+        NoProcesses,
+
+        Appearance,
+        ThemeMode,
+        System,
+        Light,
+        Dark,
+        Design,
+        DesignDefault,
+        DesignOcean,
+        DesignForest,
+        DesignSunset,
+        DesignGraphite,
+        DesignHighContrast,
+        LanguageLabel,
+        English,
+        Spanish,
+        Preview,
+        PreviewDescription,
+        ResetDefaults,
+        FollowingSystem,
+        Buttons,
+        Primary,
+        Secondary,
+        Ghost,
+        UsageBar,
+        ColorPalette,
+        SavedNote,
+
+        Count
+    };
+
+    const char* Translate(Language language, Text text);
+    const char* LanguageName(Language language);
+}
