@@ -4,7 +4,9 @@
 #include <sddl.h>
 #include <winsvc.h>
 
+#include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <thread>
 #include <vector>
 
@@ -12,6 +14,13 @@ namespace Service
 {
     namespace
     {
+        std::atomic<DWORD> lastError{ 0 };
+
+        void RememberError(DWORD error)
+        {
+            lastError.store(error, std::memory_order_release);
+        }
+
         SC_HANDLE OpenManager(DWORD access)
         {
             return OpenSCManagerW(
@@ -57,6 +66,7 @@ namespace Service
                     milliseconds(100));
             }
 
+            RememberError(ERROR_SERVICE_REQUEST_TIMEOUT);
             return false;
         }
 
@@ -100,52 +110,100 @@ namespace Service
             }
 
             constexpr DWORD controlRights =
+                READ_CONTROL |
                 SERVICE_QUERY_STATUS |
                 SERVICE_INTERROGATE |
                 SERVICE_START |
                 SERVICE_STOP |
                 SERVICE_USER_DEFINED_CONTROL;
 
-            EXPLICIT_ACCESSW entries[2]{};
+            EXPLICIT_ACCESSW entries[5]{};
+            PSID sids[5]{};
 
-            entries[0].grfAccessPermissions = controlRights;
-            entries[0].grfAccessMode = SET_ACCESS;
-            entries[0].grfInheritance = NO_INHERITANCE;
-            entries[0].Trustee.TrusteeForm = TRUSTEE_IS_SID;
-            entries[0].Trustee.TrusteeType = TRUSTEE_IS_GROUP;
-            ConvertStringSidToSidW(
-                L"AU",
-                reinterpret_cast<PSID*>(
-                    &entries[0].Trustee.ptstrName));
+            const auto addWellKnown =
+                [&](std::size_t index,
+                    WELL_KNOWN_SID_TYPE type,
+                    DWORD rights)
+                {
+                    DWORD size = SECURITY_MAX_SID_SIZE;
+                    sids[index] = LocalAlloc(LPTR, size);
 
-            entries[1].grfAccessPermissions =
-                SERVICE_ALL_ACCESS;
-            entries[1].grfAccessMode = SET_ACCESS;
-            entries[1].grfInheritance = NO_INHERITANCE;
-            entries[1].Trustee.TrusteeForm = TRUSTEE_IS_SID;
-            entries[1].Trustee.TrusteeType = TRUSTEE_IS_GROUP;
-            ConvertStringSidToSidW(
-                L"BA",
-                reinterpret_cast<PSID*>(
-                    &entries[1].Trustee.ptstrName));
+                    if (sids[index] == nullptr ||
+                        !CreateWellKnownSid(
+                            type, nullptr,
+                            sids[index], &size))
+                    {
+                        return false;
+                    }
+
+                    EXPLICIT_ACCESSW& entry =
+                        entries[index];
+
+                    entry.grfAccessPermissions = rights;
+                    entry.grfAccessMode = SET_ACCESS;
+                    entry.grfInheritance = NO_INHERITANCE;
+                    entry.Trustee.TrusteeForm =
+                        TRUSTEE_IS_SID;
+                    entry.Trustee.TrusteeType =
+                        TRUSTEE_IS_GROUP;
+                    entry.Trustee.ptstrName =
+                        reinterpret_cast<LPWSTR>(
+                            sids[index]);
+                    return true;
+                };
+
+            bool sidsReady = true;
+
+            // Cualquier usuario autenticado/interactivo debe poder
+            // arrancar y parar el servicio sin elevar con UAC.
+            sidsReady &= addWellKnown(
+                0, WinAuthenticatedUserSid,
+                controlRights);
+            sidsReady &= addWellKnown(
+                1, WinBuiltinUsersSid,
+                controlRights);
+            sidsReady &= addWellKnown(
+                2, WinInteractiveSid,
+                controlRights);
+
+            sidsReady &= addWellKnown(
+                3, WinBuiltinAdministratorsSid,
+                SERVICE_ALL_ACCESS);
+            sidsReady &= addWellKnown(
+                4, WinLocalSystemSid,
+                SERVICE_ALL_ACCESS);
+
+            if (!sidsReady)
+            {
+                const DWORD error = GetLastError();
+                for (PSID sid : sids)
+                    if (sid != nullptr)
+                        LocalFree(sid);
+                RememberError(error);
+                return false;
+            }
 
             PACL newAcl = nullptr;
             const DWORD result = SetEntriesInAclW(
-                2, entries,
+                5, entries,
                 present ? oldAcl : nullptr, &newAcl);
 
-            if (entries[0].Trustee.ptstrName != nullptr)
-                LocalFree(entries[0].Trustee.ptstrName);
-            if (entries[1].Trustee.ptstrName != nullptr)
-                LocalFree(entries[1].Trustee.ptstrName);
+            for (PSID sid : sids)
+                if (sid != nullptr)
+                    LocalFree(sid);
 
             if (result != ERROR_SUCCESS)
+            {
+                RememberError(result);
                 return false;
+            }
 
             if (!SetSecurityDescriptorDacl(
                     descriptor, TRUE, newAcl, FALSE))
             {
+                const DWORD error = GetLastError();
                 LocalFree(newAcl);
+                RememberError(error);
                 return false;
             }
 
@@ -153,6 +211,9 @@ namespace Service
                 service,
                 DACL_SECURITY_INFORMATION,
                 descriptor);
+
+            if (!ok)
+                RememberError(GetLastError());
 
             LocalFree(newAcl);
             return ok;
@@ -189,20 +250,39 @@ namespace Service
 
     bool Start()
     {
+        lastError.store(0, std::memory_order_release);
+
         SC_HANDLE service = OpenServiceHandle(
             SERVICE_START | SERVICE_QUERY_STATUS);
 
         if (service == nullptr)
+        {
+            RememberError(GetLastError());
             return false;
+        }
 
-        const bool ok = StartServiceW(
-                            service, 0, nullptr) != FALSE ||
-                        GetLastError() ==
-                            ERROR_SERVICE_ALREADY_RUNNING;
+        const bool requested =
+            StartServiceW(service, 0, nullptr) != FALSE;
+        const DWORD startError =
+            requested ? 0 : GetLastError();
+
+        const bool ok =
+            requested ||
+            startError == ERROR_SERVICE_ALREADY_RUNNING;
 
         if (ok)
-            WaitForState(
-                service, SERVICE_RUNNING, 5000);
+        {
+            if (!WaitForState(
+                    service, SERVICE_RUNNING, 5000))
+            {
+                CloseServiceHandle(service);
+                return false;
+            }
+        }
+        else
+        {
+            RememberError(startError);
+        }
 
         CloseServiceHandle(service);
         return ok;
@@ -210,23 +290,65 @@ namespace Service
 
     bool Stop()
     {
+        lastError.store(0, std::memory_order_release);
+
         SC_HANDLE service = OpenServiceHandle(
             SERVICE_STOP | SERVICE_QUERY_STATUS);
 
         if (service == nullptr)
+        {
+            RememberError(GetLastError());
             return false;
+        }
 
         SERVICE_STATUS status{};
-        BOOL requested = ControlService(
+        const BOOL requested = ControlService(
             service, SERVICE_CONTROL_STOP, &status);
+        const DWORD stopError =
+            requested != FALSE ? 0 : GetLastError();
 
         const bool ok =
             requested != FALSE ||
-            GetLastError() == ERROR_SERVICE_NOT_ACTIVE;
+            stopError == ERROR_SERVICE_NOT_ACTIVE;
 
-        if (ok)
-            WaitForState(
-                service, SERVICE_STOPPED, 5000);
+        if (!ok)
+            RememberError(stopError);
+        else if (!WaitForState(
+                     service, SERVICE_STOPPED, 5000))
+        {
+            CloseServiceHandle(service);
+            return false;
+        }
+
+        CloseServiceHandle(service);
+        return ok;
+    }
+
+    DWORD LastError()
+    {
+        return lastError.load(std::memory_order_acquire);
+    }
+
+    bool RepairPermissions()
+    {
+        lastError.store(0, std::memory_order_release);
+
+        SC_HANDLE service = OpenServiceHandle(
+            WRITE_DAC | READ_CONTROL);
+
+        if (service == nullptr)
+        {
+            RememberError(GetLastError());
+            return false;
+        }
+
+        const bool ok = GrantUserControl(service);
+
+        if (!ok && lastError.load(
+                       std::memory_order_acquire) == 0)
+        {
+            RememberError(GetLastError());
+        }
 
         CloseServiceHandle(service);
         return ok;
@@ -236,11 +358,16 @@ namespace Service
         const std::wstring& binaryPath,
         bool startAfter)
     {
+        lastError.store(0, std::memory_order_release);
+
         SC_HANDLE manager =
             OpenManager(SC_MANAGER_ALL_ACCESS);
 
         if (manager == nullptr)
+        {
+            RememberError(GetLastError());
             return false;
+        }
 
         SC_HANDLE service = OpenServiceW(
             manager, ServiceName,
@@ -281,6 +408,7 @@ namespace Service
 
         if (service == nullptr)
         {
+            RememberError(GetLastError());
             CloseServiceHandle(manager);
             return false;
         }
@@ -295,7 +423,15 @@ namespace Service
 
         // Usuarios interactivos pueden arrancar/parar el servicio
         // desde la UI sin pedir elevacion de UAC.
-        GrantUserControl(service);
+        if (!GrantUserControl(service))
+        {
+            wchar_t message[160]{};
+            swprintf_s(
+                message,
+                L"[Service] No se pudo ajustar la DACL (error %lu).\n",
+                LastError());
+            OutputDebugStringW(message);
+        }
 
         bool ok = true;
         if (startAfter)

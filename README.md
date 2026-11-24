@@ -514,3 +514,22 @@ Concede a los usuarios interactivos `SERVICE_START`, `SERVICE_STOP` y
 
 El `.iss` se compila con Inno Setup (`ISCC.exe`). Si no está instalado en este
 equipo, el instalador no se puede regenerar aquí; el script queda listo.
+
+### Permisos del servicio
+
+El servicio concede `SERVICE_START | SERVICE_STOP | SERVICE_QUERY_STATUS` a
+usuarios autenticados e interactivos, para que la UI y la bandeja puedan
+arrancarlo/pararlo sin UAC. El propio servicio reaplica esa DACL al arrancar,
+así que basta con reiniciarlo una vez después de actualizar desde una versión
+anterior que no la ajustaba.
+
+El named pipe también tiene una DACL explícita (`Assets/logo.ico` no influye):
+usuarios `SYSTEM`, administradores, usuarios autenticados e interactivos pueden
+conectar, incluso cuando el servidor corre como `LocalSystem` en la sesión 0.
+
+### Logo e iconos
+
+`ProcessOptimizer/Assets/logo.ico` está embebido mediante `App.rc` en los tres
+ejecutables: es el icono de la ventana de UI, del icono de bandeja y de los
+archivos `.exe`. `Assets/logo.png` se distribuye como recurso gráfico y el
+instalador usa el `.ico` para el setup, los accesos directos y el desinstalador.

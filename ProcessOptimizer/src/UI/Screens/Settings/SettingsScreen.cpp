@@ -201,17 +201,21 @@ namespace UI::Screens::Settings
             UI::Widgets::EndCard();
         }
 
-        void RenderService(
+        bool RenderService(
             UI::Localization::Language language,
             const UI::Theme::UiPalette& palette)
         {
+            static bool lastActionFailed = false;
+            static DWORD lastActionError = 0;
+            bool serviceChanged = false;
+
             UI::Widgets::SectionTitle(
                 T(language, Text::ServiceSection),
                 nullptr,
                 palette);
 
             UI::Widgets::BeginCard(
-                "ServiceStatusCard", 116.0f, palette);
+                "ServiceStatusCard", 150.0f, palette);
 
             const bool installed = Service::IsInstalled();
             const std::uint32_t state =
@@ -265,22 +269,45 @@ namespace UI::Screens::Settings
                             T(language, Text::StopServiceButton),
                             palette))
                     {
-                        Service::Stop();
+                        const bool ok = Service::Stop();
+                        lastActionFailed = !ok;
+                        lastActionError = ok
+                            ? 0
+                            : Service::LastError();
+                        serviceChanged = true;
                     }
                 }
                 else if (UI::Widgets::PrimaryButton(
                              T(language, Text::StartServiceButton),
                              palette))
                 {
-                    Service::Start();
+                    const bool ok = Service::Start();
+                    lastActionFailed = !ok;
+                    lastActionError = ok
+                        ? 0
+                        : Service::LastError();
+                    serviceChanged = true;
                 }
             }
 
+            if (lastActionFailed)
+            {
+                ImGui::Spacing();
+                UI::Widgets::Badge(
+                    T(language, Text::ServiceActionFailed),
+                    palette.Danger,
+                    palette);
+                ImGui::Text("Error: %lu",
+                            static_cast<unsigned long>(
+                                lastActionError));
+            }
+
             UI::Widgets::EndCard();
+            return serviceChanged;
         }
     }
 
-    void SettingsScreen::Render(
+    bool SettingsScreen::Render(
         UI::Theme::AppSettings& settings,
         const UI::Theme::UiPalette& palette,
         UI::Localization::Language language)
@@ -299,7 +326,8 @@ namespace UI::Screens::Settings
         ImGui::Spacing();
 
         RenderAppearance(settings, palette, language);
-        RenderService(language, palette);
+        const bool serviceChanged =
+            RenderService(language, palette);
         RenderPreview(palette, language);
 
         ImGui::Spacing();
@@ -315,5 +343,7 @@ namespace UI::Screens::Settings
         UI::Widgets::MutedText(
             T(language, Text::SavedNote),
             palette);
+
+        return serviceChanged;
     }
 }

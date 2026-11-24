@@ -23,6 +23,13 @@ namespace Service
     bool Start();
     bool Stop();
 
+    // Codigo de error de la ultima accion Start/Stop/Install/Uninstall.
+    DWORD LastError();
+
     bool Install(const std::wstring& binaryPath, bool startAfter);
     bool Uninstall();
+
+    // Reaplica la DACL al servicio. El propio servicio (LocalSystem) la
+    // llama al arrancar para reparar instalaciones anteriores.
+    bool RepairPermissions();
 }

@@ -228,6 +228,12 @@
     <ClInclude Include="src\UI\Theme\Theme.h" />
     <ClInclude Include="src\UI\Screens\Process\ProcessDashboard.h" />
     <ClInclude Include="src\UI\Windows\Window.h" />
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Assets\logo.png" />
+    <None Include="Assets\logo.ico" />
+    <ResourceCompile Include="App.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

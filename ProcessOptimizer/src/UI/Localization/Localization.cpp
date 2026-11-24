@@ -121,7 +121,8 @@ namespace UI::Localization
             "Stopped",
             "Not installed",
             "Start service",
-            "Stop service"
+            "Stop service",
+            "The service action failed"
         }};
 
         const std::array<const char*, Count> SpanishTexts{{
@@ -233,7 +234,8 @@ namespace UI::Localization
             "Detenido",
             "No instalado",
             "Iniciar servicio",
-            "Detener servicio"
+            "Detener servicio",
+            "No se pudo completar la acci\303\263n"
         }};
     }
 

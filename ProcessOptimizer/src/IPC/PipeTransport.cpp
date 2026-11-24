@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <sddl.h>
 
 namespace IPC
 {
@@ -63,6 +64,27 @@ namespace IPC
         {
             return static_cast<std::uint64_t>(
                 GetTickCount64());
+        }
+
+        // El servicio corre como LocalSystem. Sin una DACL explicita, el
+        // pipe hereda una lista que puede denegar el acceso a la UI y al
+        // tray cuando se ejecutan como usuario normal.
+        PSECURITY_DESCRIPTOR CreatePipeSecurityDescriptor()
+        {
+            PSECURITY_DESCRIPTOR descriptor = nullptr;
+
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                L"D:P"
+                L"(A;;GA;;;SY)"  // SYSTEM
+                L"(A;;GA;;;BA)"  // Administradores
+                L"(A;;GA;;;AU)"  // Usuarios autenticados
+                L"(A;;GA;;;BU)"  // Usuarios
+                L"(A;;GA;;;IU)", // Usuarios interactivos
+                SDDL_REVISION_1,
+                &descriptor,
+                nullptr);
+
+            return descriptor;
         }
     }
 
@@ -148,6 +170,16 @@ namespace IPC
     {
         while (running_.load())
         {
+            PSECURITY_DESCRIPTOR security =
+                CreatePipeSecurityDescriptor();
+
+            SECURITY_ATTRIBUTES securityAttributes{};
+            securityAttributes.nLength =
+                sizeof(SECURITY_ATTRIBUTES);
+            securityAttributes.lpSecurityDescriptor =
+                security;
+            securityAttributes.bInheritHandle = FALSE;
+
             HANDLE pipe = CreateNamedPipeW(
                 PipeName,
                 PIPE_ACCESS_DUPLEX,
@@ -157,7 +189,10 @@ namespace IPC
                 PipeBufferSize,
                 PipeBufferSize,
                 0,
-                nullptr);
+                &securityAttributes);
+
+            if (security != nullptr)
+                LocalFree(security);
 
             if (pipe == INVALID_HANDLE_VALUE)
             {

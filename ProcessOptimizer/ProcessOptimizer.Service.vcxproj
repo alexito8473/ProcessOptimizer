@@ -193,6 +193,12 @@
     <ClInclude Include="src\Monitoring\MemoryMonitor\MemoryInfo.h" />
     <ClInclude Include="src\Monitoring\MemoryMonitor\MemoryMonitor.h" />
     <ClInclude Include="src\Monitoring\SystemMonitor\SystemMonitor.h" />
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Assets\logo.png" />
+    <None Include="Assets\logo.ico" />
+    <ResourceCompile Include="App.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

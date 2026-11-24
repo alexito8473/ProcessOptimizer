@@ -9,17 +9,21 @@ Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=admin
 AppMutex=ProcessOptimizerSetup
+SetupIconFile=..\ProcessOptimizer\Assets\logo.ico
+UninstallIconFile={app}\logo.ico
 
 [Files]
 Source: "..\ProcessOptimizer\x64\Release\ProcessOptimizer.Service.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\ProcessOptimizer\x64\Release\ProcessOptimizer.UI.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\ProcessOptimizer\x64\Release\ProcessOptimizer.Tray.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\ProcessOptimizer\Assets\logo.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\ProcessOptimizer\Assets\logo.png"; DestDir: "{app}"; Flags: ignoreversion
 Source: "vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
-Name: "{autoprograms}\ProcessOptimizer"; Filename: "{app}\ProcessOptimizer.UI.exe"
-Name: "{autoprograms}\ProcessOptimizer Tray"; Filename: "{app}\ProcessOptimizer.Tray.exe"
-Name: "{autostartup}\ProcessOptimizer Tray"; Filename: "{app}\ProcessOptimizer.Tray.exe"
+Name: "{autoprograms}\ProcessOptimizer"; Filename: "{app}\ProcessOptimizer.UI.exe"; IconFilename: "{app}\logo.ico"
+Name: "{autoprograms}\ProcessOptimizer Tray"; Filename: "{app}\ProcessOptimizer.Tray.exe"; IconFilename: "{app}\logo.ico"
+Name: "{autostartup}\ProcessOptimizer Tray"; Filename: "{app}\ProcessOptimizer.Tray.exe"; IconFilename: "{app}\logo.ico"
 
 [Run]
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; Flags: waituntilterminated

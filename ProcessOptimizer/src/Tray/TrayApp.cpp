@@ -1,5 +1,6 @@
 #include "TrayApp.h"
 #include "../Service/ServiceControl.h"
+#include "../../resource.h"
 
 #include <algorithm>
 #include <chrono>
@@ -120,7 +121,8 @@ namespace Tray
             0, 0, 250, 150,
             nullptr, nullptr, instance_, this);
 
-        icon_ = LoadIconW(nullptr, IDI_APPLICATION);
+        icon_ = LoadIconW(
+            instance_, MAKEINTRESOURCEW(IDI_APP));
 
         notifyData_.cbSize = sizeof(NOTIFYICONDATAW);
         notifyData_.hWnd = hwnd_;

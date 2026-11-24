@@ -1,6 +1,7 @@
 
 #include "Window.h"
 #include "../../Service/MonitorState.h"
+#include "../../../resource.h"
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 
@@ -308,11 +309,16 @@ bool Window::Create(HINSTANCE instance)
 {
     instance_ = instance;
 
+    HICON appIcon = LoadIconW(
+        instance_, MAKEINTRESOURCEW(IDI_APP));
+
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(WNDCLASSEXW);
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = instance_;
     wc.lpszClassName = ClassName;
+    wc.hIcon = appIcon;
+    wc.hIconSm = appIcon;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
 
@@ -340,6 +346,13 @@ bool Window::Create(HINSTANCE instance)
         return false;
 
     sharedState_->hwnd = hwnd_;
+
+    SendMessageW(
+        hwnd_, WM_SETICON, ICON_BIG,
+        reinterpret_cast<LPARAM>(appIcon));
+    SendMessageW(
+        hwnd_, WM_SETICON, ICON_SMALL,
+        reinterpret_cast<LPARAM>(appIcon));
 
     if (!renderer_.Initialize(hwnd_))
     {
@@ -859,12 +872,24 @@ void Window::RenderRegionContent()
         UI::Theme::AppSettings settings =
             themeSettings_;
 
-        UI::Screens::Settings::SettingsScreen::Render(
-            settings,
-            palette_,
-            themeSettings_.language);
+        const bool serviceChanged =
+            UI::Screens::Settings::SettingsScreen::Render(
+                settings,
+                palette_,
+                themeSettings_.language);
 
         SetAppSettings(settings);
+
+        if (serviceChanged)
+        {
+            // Settings no tiene bits de datos propios: el render es bajo
+            // demanda, asi que una accion Start/Stop necesita pedir un
+            // frame nuevo para que el badge cambie en cuanto el SCM
+            // confirme el estado.
+            scheduler_.Invalidate(
+                UI::Core::UiComponent::All);
+            RequestFrame();
+        }
         break;
     }
 

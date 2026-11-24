@@ -8,7 +8,9 @@ namespace UI::Screens::Settings
     class SettingsScreen
     {
     public:
-        static void Render(
+        // Devuelve true si el usuario ha iniciado/detenido el servicio
+        // en este frame, para que Window fuerce un redibujado.
+        static bool Render(
             UI::Theme::AppSettings& settings,
             const UI::Theme::UiPalette& palette,
             UI::Localization::Language language);

@@ -121,6 +121,7 @@ namespace UI::Localization
         ServiceNotInstalled,
         StartServiceButton,
         StopServiceButton,
+        ServiceActionFailed,
 
         Count
     };

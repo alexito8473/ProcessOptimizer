@@ -27,17 +27,21 @@ namespace Service
             serviceStatus.dwWin32ExitCode = exitCode;
 
             if (state == SERVICE_RUNNING ||
-                state == SERVICE_STOPPED)
+                state == SERVICE_STOP_PENDING)
             {
                 serviceStatus.dwControlsAccepted =
-                    state == SERVICE_RUNNING
-                        ? SERVICE_ACCEPT_STOP |
-                              SERVICE_ACCEPT_SHUTDOWN
-                        : 0;
+                    SERVICE_ACCEPT_STOP |
+                    SERVICE_ACCEPT_SHUTDOWN;
+            }
+            else
+            {
+                serviceStatus.dwControlsAccepted = 0;
             }
 
-            serviceStatus.dwCheckPoint = 0;
-            serviceStatus.dwWaitHint = 0;
+            serviceStatus.dwCheckPoint =
+                state == SERVICE_STOP_PENDING ? 1 : 0;
+            serviceStatus.dwWaitHint =
+                state == SERVICE_STOP_PENDING ? 5000 : 0;
 
             SetServiceStatus(statusHandle, &serviceStatus);
         }
@@ -59,6 +63,12 @@ namespace Service
 
             if (statusHandle == nullptr)
                 return;
+
+            // Reparacion automatica de la DACL: al correr como LocalSystem,
+            // el servicio puede conceder START/STOP a los usuarios
+            // interactivos incluso si fue instalado con una version
+            // anterior que no ajustaba los permisos.
+            RepairPermissions();
 
             serviceStatus.dwServiceType =
                 SERVICE_WIN32_OWN_PROCESS;
