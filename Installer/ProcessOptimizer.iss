@@ -27,6 +27,7 @@ Name: "{autostartup}\ProcessOptimizer Tray"; Filename: "{app}\ProcessOptimizer.T
 
 [Run]
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; Flags: waituntilterminated
+Filename: "{app}\ProcessOptimizer.Service.exe"; Parameters: "--stop"; Flags: waituntilterminated runhidden skipifdoesntexist
 Filename: "{app}\ProcessOptimizer.Service.exe"; Parameters: "--install --start"; Flags: waituntilterminated runhidden
 Filename: "{app}\ProcessOptimizer.UI.exe"; Description: "Iniciar ProcessOptimizer"; Flags: postinstall nowait skipifsilent
 Filename: "{app}\ProcessOptimizer.Tray.exe"; Flags: postinstall nowait skipifsilent

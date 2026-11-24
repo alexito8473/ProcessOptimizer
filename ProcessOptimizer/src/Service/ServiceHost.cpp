@@ -155,6 +155,22 @@ namespace Service
             return ok ? 0 : 1;
         }
 
+        if (HasArgument(argc, argv, L"--stop"))
+        {
+            const bool ok = Stop();
+            Log(ok ? L"[Service] Servicio detenido."
+                   : L"[Service] No se pudo detener.");
+            return ok ? 0 : 1;
+        }
+
+        if (HasArgument(argc, argv, L"--start"))
+        {
+            const bool ok = Start();
+            Log(ok ? L"[Service] Servicio iniciado."
+                   : L"[Service] No se pudo iniciar.");
+            return ok ? 0 : 1;
+        }
+
         stopEvent = CreateEventW(
             nullptr, TRUE, FALSE, nullptr);
         if (stopEvent == nullptr)
