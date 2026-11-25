@@ -181,6 +181,7 @@
     <ClCompile Include="src\UI\Screens\Settings\SettingsScreen.cpp" />
     <ClCompile Include="src\UI\Theme\Theme.cpp" />
     <ClCompile Include="src\UI\Screens\Process\ProcessDashboard.cpp" />
+    <ClCompile Include="src\UI\Screens\Optimization\OptimizationScreen.cpp" />
     <ClCompile Include="src\UI\Windows\Window.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -227,6 +228,7 @@
     <ClInclude Include="src\UI\Screens\Settings\SettingsScreen.h" />
     <ClInclude Include="src\UI\Theme\Theme.h" />
     <ClInclude Include="src\UI\Screens\Process\ProcessDashboard.h" />
+    <ClInclude Include="src\UI\Screens\Optimization\OptimizationScreen.h" />
     <ClInclude Include="src\UI\Windows\Window.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>

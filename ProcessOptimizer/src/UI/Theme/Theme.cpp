@@ -294,6 +294,53 @@ namespace UI::Theme
             : "es";
     }
 
+    bool ReadJsonBool(
+        const std::string& json,
+        const char* key,
+        bool fallback)
+    {
+        const std::string needle =
+            std::string("\"") + key + "\"";
+
+        const std::size_t keyPos = json.find(needle);
+        if (keyPos == std::string::npos)
+            return fallback;
+
+        const std::size_t colon =
+            json.find(':', keyPos + needle.size());
+        if (colon == std::string::npos)
+            return fallback;
+
+        const std::size_t valuePos = json.find_first_not_of(
+            " \t\r\n", colon + 1);
+        if (valuePos == std::string::npos)
+            return fallback;
+
+        if (json.compare(valuePos, 4, "true") == 0)
+            return true;
+        if (json.compare(valuePos, 5, "false") == 0)
+            return false;
+        return fallback;
+    }
+
+    int ParseOptimizerMode(const std::string& value)
+    {
+        if (value == "gaming")
+            return 1;
+        if (value == "multitasking")
+            return 2;
+        return 0;
+    }
+
+    const char* OptimizerModeToString(int mode)
+    {
+        if (mode == 1)
+            return "gaming";
+        if (mode == 2)
+            return "multitasking";
+        return "off";
+    }
+
     ThemeSettings LoadSettings()
     {
         ThemeSettings settings{};
@@ -312,6 +359,8 @@ namespace UI::Theme
             ReadJsonString(json, "design");
         const std::string language =
             ReadJsonString(json, "language");
+        const std::string optimizer =
+            ReadJsonString(json, "optimizerMode");
 
         if (!mode.empty())
             settings.mode = ParseMode(mode);
@@ -321,6 +370,11 @@ namespace UI::Theme
 
         if (!language.empty())
             settings.language = ParseLanguage(language);
+
+        settings.optimizerEnabled = ReadJsonBool(
+            json, "optimizerEnabled", false);
+        settings.optimizerMode =
+            ParseOptimizerMode(optimizer);
 
         return settings;
     }
@@ -346,6 +400,12 @@ namespace UI::Theme
              << DesignToString(settings.design) << "\",\n"
              << "  \"language\": \""
              << LanguageToString(settings.language)
+             << "\",\n"
+             << "  \"optimizerEnabled\": "
+             << (settings.optimizerEnabled ? "true" : "false")
+             << ",\n"
+             << "  \"optimizerMode\": \""
+             << OptimizerModeToString(settings.optimizerMode)
              << "\"\n"
              << "}\n";
     }

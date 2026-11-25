@@ -2,6 +2,8 @@
 
 #include "../IPC/PipeTransport.h"
 #include "../Monitoring/SystemMonitor/SystemMonitor.h"
+#include "../Optimization/CpuTopology.h"
+#include "../Optimization/CpuOrchestrator.h"
 #include "MonitorState.h"
 
 #include <cstddef>
@@ -30,7 +32,11 @@ namespace Service
         EventSystem events_;
         std::shared_ptr<SystemMonitor> monitor_;
         std::unique_ptr<IPC::PipeServer> pipe_;
+        std::unique_ptr<Optimization::CpuOrchestrator> orchestrator_;
         MonitorState state_;
+
+        Optimization::TopologySnapshot topology_;
+        Optimization::OptimizerState optimizer_;
 
         bool subscribed_ = false;
         std::size_t cpuSubscription_ = 0;

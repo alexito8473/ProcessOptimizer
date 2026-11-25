@@ -166,6 +166,9 @@
     <ClCompile Include="src\Monitoring\CpuMonitor\CpuMonitor.cpp" />
     <ClCompile Include="src\Monitoring\MemoryMonitor\MemoryMonitor.cpp" />
     <ClCompile Include="src\Monitoring\SystemMonitor\SystemMonitor.cpp" />
+    <ClCompile Include="src\Optimization\CpuTopology.cpp" />
+    <ClCompile Include="src\Optimization\CpuOrchestrator.cpp" />
+    <ClCompile Include="src\Optimization\ThreadMonitor.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\IPC\Protocol.h" />
@@ -193,6 +196,10 @@
     <ClInclude Include="src\Monitoring\MemoryMonitor\MemoryInfo.h" />
     <ClInclude Include="src\Monitoring\MemoryMonitor\MemoryMonitor.h" />
     <ClInclude Include="src\Monitoring\SystemMonitor\SystemMonitor.h" />
+    <ClInclude Include="src\Optimization\CpuTopology.h" />
+    <ClInclude Include="src\Optimization\CpuOrchestrator.h" />
+    <ClInclude Include="src\Optimization\OptimizationTypes.h" />
+    <ClInclude Include="src\Optimization\ThreadMonitor.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>

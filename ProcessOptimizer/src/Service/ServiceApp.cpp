@@ -19,6 +19,8 @@ namespace Service
             [this](const CpuSnapshot& snapshot)
             {
                 state_.ApplyCpu(snapshot);
+                if (orchestrator_)
+                    orchestrator_->OnCpuSnapshot(snapshot);
             });
 
         memorySubscription_ =
@@ -42,15 +44,86 @@ namespace Service
                 [this](const ProcessSnapshot& snapshot)
                 {
                     state_.ApplyProcesses(snapshot);
+                    if (orchestrator_)
+                        orchestrator_->OnProcessSnapshot(
+                            snapshot);
                 });
 
         subscribed_ = true;
 
+        topology_ = Optimization::CpuTopology::Detect();
+        state_.SetTopology(topology_);
+
+        orchestrator_ =
+            std::make_unique<Optimization::CpuOrchestrator>(
+                [this](
+                    const Optimization::OptimizerState& state)
+                {
+                    state_.SetOptimizer(state);
+                });
+        orchestrator_->SetTopology(topology_);
+        orchestrator_->Start();
+
         monitor_ = std::make_shared<SystemMonitor>(events_);
         monitor_->Start();
 
+        IPC::PipeServer::CommandHandler commandHandler =
+            [this](
+                IPC::Request request,
+                const std::vector<std::uint8_t>& payload)
+            {
+                if (!orchestrator_)
+                    return false;
+
+                if (request ==
+                    IPC::Request::SetOptimizerConfig)
+                {
+                    IPC::OptimizerConfigCommand command;
+                    if (!IPC::Deserialize(
+                            payload.data(),
+                            payload.size(),
+                            command))
+                    {
+                        return false;
+                    }
+
+                    if (!command.enabled ||
+                        command.mode ==
+                            Optimization::OptimizerMode::Off)
+                    {
+                        orchestrator_->SetEnabled(false);
+                    }
+                    else
+                    {
+                        orchestrator_->SetMode(command.mode);
+                    }
+
+                    return true;
+                }
+
+                if (request ==
+                    IPC::Request::SetForegroundProcess)
+                {
+                    IPC::ForegroundProcessCommand command;
+                    if (!IPC::Deserialize(
+                            payload.data(),
+                            payload.size(),
+                            command))
+                    {
+                        return false;
+                    }
+
+                    orchestrator_->SetForegroundProcess(
+                        command.processId);
+                    return true;
+                }
+
+                return false;
+            };
+
         pipe_ = std::make_unique<IPC::PipeServer>(
-            [this]() { return state_.Snapshot(); });
+            [this]() { return state_.Snapshot(); },
+            commandHandler);
         pipe_->Start();
 
         return true;

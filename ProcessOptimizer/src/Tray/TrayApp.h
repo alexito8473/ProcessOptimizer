@@ -8,6 +8,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace Tray
 {
@@ -17,6 +18,17 @@ namespace Tray
         bool Run(HINSTANCE instance);
 
     private:
+        struct PopupView
+        {
+            std::wstring metricLines[3]{};
+            std::wstring processLine;
+            std::wstring gpuLine;
+            std::wstring serviceLines[3]{};
+            std::vector<POINT> cpuPoints;
+            std::vector<POINT> memoryPoints;
+            std::vector<POINT> gpuPoints;
+        };
+
         static LRESULT CALLBACK WindowProc(
             HWND hwnd, UINT message,
             WPARAM wParam, LPARAM lParam);
@@ -43,6 +55,6 @@ namespace Tray
         mutable std::mutex stateMutex_;
         IPC::State state_;
         bool connected_ = false;
-        std::wstring popupText_;
+        PopupView popupView_;
     };
 }

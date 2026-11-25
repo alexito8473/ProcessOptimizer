@@ -27,6 +27,7 @@
 #include "../Screens/Memory/MemoryDashboard.h"
 #include "../Screens/Gpu/GpuDashboard.h"
 #include "../Screens/Process/ProcessDashboard.h"
+#include "../Screens/Optimization/OptimizationScreen.h"
 #include "../Screens/Settings/SettingsScreen.h"
 #include "../Theme/Theme.h"
 
@@ -75,6 +76,12 @@ struct SharedState
     // PROCESSES
     ProcessSnapshot processSnapshot{};
     bool hasProcessSnapshot = false;
+
+    // OPTIMIZATION
+    Optimization::TopologySnapshot topology{};
+    Optimization::OptimizerState optimizer{};
+    bool hasTopology = false;
+    bool hasOptimizer = false;
 };
 class Window
 {
@@ -101,6 +108,8 @@ private:
     void StopServiceClient();
     void ServiceClientLoop();
     void ApplyRemoteState(const IPC::State& state);
+    void ApplySavedOptimizerConfig(IPC::PipeClient& client);
+    void SendForegroundProcess(IPC::PipeClient& client);
     bool IsInteractingWithUI() const;
     static constexpr wchar_t ClassName[] =
         L"ProcessOptimizerMainWindow";
@@ -203,4 +212,11 @@ private:
     std::atomic<bool> clientThreadRunning_{ false };
     std::thread clientThread_;
     std::uint64_t lastRemoteSequence_ = 0;
+
+    // Preferencia publicada por la pagina de optimizacion al hilo cliente,
+    // para leerla sin acceder a themeSettings_ desde otro hilo.
+    std::atomic<bool> optimizerEnabledPref_{ false };
+    std::atomic<int> optimizerModePref_{ 0 };
+    std::atomic<bool> optimizerConfigSent_{ false };
+    DWORD lastForegroundPid_ = 0;
 };

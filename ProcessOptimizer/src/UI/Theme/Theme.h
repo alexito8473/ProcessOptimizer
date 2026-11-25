@@ -48,6 +48,11 @@ namespace UI::Theme
         UiDesign design = UiDesign::Default;
         Localization::Language language =
             Localization::Language::Spanish;
+
+        // Preferencia del orquestador. 0 = apagado, 1 = gaming,
+        // 2 = multitarea; se guarda con el resto de ajustes.
+        bool optimizerEnabled = false;
+        int optimizerMode = 0;
     };
 
     using AppSettings = ThemeSettings;

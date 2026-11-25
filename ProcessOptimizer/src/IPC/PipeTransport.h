@@ -15,8 +15,14 @@ namespace IPC
     {
     public:
         using StateProvider = std::function<State()>;
+        using CommandHandler = std::function<bool(
+            Request request,
+            const std::vector<std::uint8_t>& payload)>;
 
-        explicit PipeServer(StateProvider provider);
+        explicit PipeServer(
+            StateProvider provider,
+            CommandHandler handler = {});
+
         ~PipeServer();
 
         PipeServer(const PipeServer&) = delete;
@@ -33,6 +39,7 @@ namespace IPC
         void UnregisterClient(HANDLE pipe);
 
         StateProvider provider_;
+        CommandHandler handler_;
         std::atomic<bool> running_{false};
         HANDLE listenPipe_ = INVALID_HANDLE_VALUE;
 
@@ -48,11 +55,16 @@ namespace IPC
     public:
         bool Ping();
         bool GetState(State& state);
+        bool SetOptimizerConfig(
+            bool enabled,
+            Optimization::OptimizerMode mode);
+        bool SetForegroundProcess(DWORD processId);
 
     private:
         bool RoundTrip(
             Request request,
             ResponseType expected,
-            std::vector<std::uint8_t>& payload);
+            const std::vector<std::uint8_t>& requestPayload,
+            std::vector<std::uint8_t>& responsePayload);
     };
 }

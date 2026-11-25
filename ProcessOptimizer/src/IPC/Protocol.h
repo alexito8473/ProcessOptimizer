@@ -14,25 +14,41 @@
 #include "../Monitoring/GpuMonitor/GpuInfo.h"
 #include "../Monitoring/MemoryMonitor/MemoryInfo.h"
 #include "../Monitoring/ProcessMonitor/ProcessInfo.h"
+#include "../Optimization/OptimizationTypes.h"
 
 namespace IPC
 {
     inline constexpr wchar_t PipeName[] =
         L"\\\\.\\pipe\\ProcessOptimizer.Monitor";
     inline constexpr std::uint32_t ProtocolMagic = 0x504F4D31; // "POM1"
-    inline constexpr std::uint32_t ProtocolVersion = 1;
+    inline constexpr std::uint32_t ProtocolVersion = 2;
 
     enum class Request : std::uint32_t
     {
         Ping = 1,
-        GetState = 2
+        GetState = 2,
+        SetOptimizerConfig = 3,
+        SetForegroundProcess = 4
     };
 
     enum class ResponseType : std::uint32_t
     {
         Pong = 1,
         State = 2,
-        Error = 3
+        Error = 3,
+        Ack = 4
+    };
+
+    struct OptimizerConfigCommand
+    {
+        bool enabled = false;
+        Optimization::OptimizerMode mode =
+            Optimization::OptimizerMode::Off;
+    };
+
+    struct ForegroundProcessCommand
+    {
+        DWORD processId = 0;
     };
 
     struct ResponseHeader
@@ -112,11 +128,16 @@ namespace IPC
         bool hasMemory = false;
         bool hasGpu = false;
         bool hasProcesses = false;
+        bool hasTopology = false;
+        bool hasOptimizer = false;
 
         CpuSnapshot cpu;
         MemorySnapshot memory;
         GpuSnapshot gpu;
         ProcessSnapshot processes;
+
+        Optimization::TopologySnapshot topology;
+        Optimization::OptimizerState optimizer;
 
         CpuRing cpuHistory;
         MemoryRing memoryHistory;
@@ -832,6 +853,264 @@ namespace IPC
             return ReadRing(r, v.cpu) && ReadRing(r, v.memory) &&
                    r.Vec(v.gpus, [](Reader& r, auto& v) { return Read(r, v); });
         }
+
+        inline void Write(Writer& w, const Optimization::GroupMask& v)
+        {
+            w.Pod(v.group);
+            w.Pod(v.mask);
+        }
+        inline bool Read(Reader& r, Optimization::GroupMask& v)
+        {
+            return r.Pod(v.group) && r.Pod(v.mask);
+        }
+
+        inline void Write(Writer& w, const Optimization::TopologyProcessor& v)
+        {
+            w.Pod(v.group);
+            w.Pod(v.logicalIndex);
+            w.Pod(v.physicalCoreIndex);
+            w.Pod(v.numaNode);
+            w.Pod(v.l1CacheId);
+            w.Pod(v.l2CacheId);
+            w.Pod(v.l3CacheId);
+            w.Pod(v.efficiencyClass);
+            WriteEnum(w, v.coreClass);
+            w.Pod(v.usagePercent);
+        }
+        inline bool Read(Reader& r, Optimization::TopologyProcessor& v)
+        {
+            return r.Pod(v.group) &&
+                   r.Pod(v.logicalIndex) &&
+                   r.Pod(v.physicalCoreIndex) &&
+                   r.Pod(v.numaNode) &&
+                   r.Pod(v.l1CacheId) &&
+                   r.Pod(v.l2CacheId) &&
+                   r.Pod(v.l3CacheId) &&
+                   r.Pod(v.efficiencyClass) &&
+                   ReadEnum(r, v.coreClass) &&
+                   r.Pod(v.usagePercent);
+        }
+
+        inline void Write(Writer& w, const Optimization::TopologyCore& v)
+        {
+            w.Pod(v.coreIndex);
+            w.Pod(v.group);
+            WriteEnum(w, v.coreClass);
+            w.Pod(v.numaNode);
+            w.Pod(v.l2CacheId);
+            w.Pod(v.l3CacheId);
+            w.Vec(v.groups, [](Writer& w, const auto& v) { Write(w, v); });
+            w.PodVec(v.logicalIndices);
+        }
+        inline bool Read(Reader& r, Optimization::TopologyCore& v)
+        {
+            return r.Pod(v.coreIndex) &&
+                   r.Pod(v.group) &&
+                   ReadEnum(r, v.coreClass) &&
+                   r.Pod(v.numaNode) &&
+                   r.Pod(v.l2CacheId) &&
+                   r.Pod(v.l3CacheId) &&
+                   r.Vec(v.groups, [](Reader& r, auto& v) { return Read(r, v); }) &&
+                   r.PodVec(v.logicalIndices);
+        }
+
+        inline void Write(Writer& w, const Optimization::TopologyCache& v)
+        {
+            w.Pod(v.id);
+            w.Pod(v.level);
+            w.Pod(v.sizeKB);
+            w.Pod(v.lineSize);
+            w.Vec(v.groups, [](Writer& w, const auto& v) { Write(w, v); });
+        }
+        inline bool Read(Reader& r, Optimization::TopologyCache& v)
+        {
+            return r.Pod(v.id) &&
+                   r.Pod(v.level) &&
+                   r.Pod(v.sizeKB) &&
+                   r.Pod(v.lineSize) &&
+                   r.Vec(v.groups, [](Reader& r, auto& v) { return Read(r, v); });
+        }
+
+        inline void Write(Writer& w, const Optimization::TopologySnapshot& v)
+        {
+            WriteEnum(w, v.kind);
+            w.Pod(v.groupCount);
+            w.Pod(v.numaNodeCount);
+            w.Bool(v.available);
+            w.Vec(v.processors, [](Writer& w, const auto& v) { Write(w, v); });
+            w.Vec(v.cores, [](Writer& w, const auto& v) { Write(w, v); });
+            w.Vec(v.caches, [](Writer& w, const auto& v) { Write(w, v); });
+        }
+        inline bool Read(Reader& r, Optimization::TopologySnapshot& v)
+        {
+            return ReadEnum(r, v.kind) &&
+                   r.Pod(v.groupCount) &&
+                   r.Pod(v.numaNodeCount) &&
+                   r.Bool(v.available) &&
+                   r.Vec(v.processors, [](Reader& r, auto& v) { return Read(r, v); }) &&
+                   r.Vec(v.cores, [](Reader& r, auto& v) { return Read(r, v); }) &&
+                   r.Vec(v.caches, [](Reader& r, auto& v) { return Read(r, v); });
+        }
+
+        inline void Write(Writer& w, const Optimization::ThreadPlan& v)
+        {
+            w.Pod(v.threadId);
+            w.Pod(v.cpuUsagePercent);
+            w.Pod(v.currentGroup);
+            w.Pod(v.currentAffinity);
+            w.Pod(v.targetGroup);
+            w.Pod(v.targetAffinity);
+            w.Pod(v.currentIdealProcessor);
+            w.Pod(v.targetIdealProcessor);
+            w.Pod(v.currentPriority);
+            w.Pod(v.targetPriority);
+            w.Pod(v.l2CacheId);
+            w.Pod(v.l3CacheId);
+            w.Str(v.reason);
+            WriteEnum(w, v.status);
+            w.Bool(v.verified);
+        }
+        inline bool Read(Reader& r, Optimization::ThreadPlan& v)
+        {
+            return r.Pod(v.threadId) &&
+                   r.Pod(v.cpuUsagePercent) &&
+                   r.Pod(v.currentGroup) &&
+                   r.Pod(v.currentAffinity) &&
+                   r.Pod(v.targetGroup) &&
+                   r.Pod(v.targetAffinity) &&
+                   r.Pod(v.currentIdealProcessor) &&
+                   r.Pod(v.targetIdealProcessor) &&
+                   r.Pod(v.currentPriority) &&
+                   r.Pod(v.targetPriority) &&
+                   r.Pod(v.l2CacheId) &&
+                   r.Pod(v.l3CacheId) &&
+                   r.Str(v.reason) &&
+                   ReadEnum(r, v.status) &&
+                   r.Bool(v.verified);
+        }
+
+        inline void Write(Writer& w, const Optimization::ProcessPlan& v)
+        {
+            w.Pod(v.processId);
+            w.WStr(v.name);
+            w.Bool(v.foreground);
+            w.Bool(v.systemCritical);
+            w.Pod(v.cpuUsagePercent);
+            w.Pod(v.gpuUsagePercent);
+            w.Pod(v.threadCount);
+            w.Pod(v.currentPriority);
+            w.Pod(v.targetPriority);
+            w.Str(v.decision);
+            w.Vec(v.threads, [](Writer& w, const auto& v) { Write(w, v); });
+        }
+        inline bool Read(Reader& r, Optimization::ProcessPlan& v)
+        {
+            return r.Pod(v.processId) &&
+                   r.WStr(v.name) &&
+                   r.Bool(v.foreground) &&
+                   r.Bool(v.systemCritical) &&
+                   r.Pod(v.cpuUsagePercent) &&
+                   r.Pod(v.gpuUsagePercent) &&
+                   r.Pod(v.threadCount) &&
+                   r.Pod(v.currentPriority) &&
+                   r.Pod(v.targetPriority) &&
+                   r.Str(v.decision) &&
+                   r.Vec(v.threads, [](Reader& r, auto& v) { return Read(r, v); });
+        }
+
+        inline void Write(Writer& w, const Optimization::CoreAssignment& v)
+        {
+            w.Pod(v.group);
+            w.Pod(v.logicalIndex);
+            w.Pod(v.physicalCoreIndex);
+            WriteEnum(w, v.coreClass);
+            w.Pod(v.l2CacheId);
+            w.Pod(v.l3CacheId);
+            w.Pod(v.usagePercent);
+            w.Pod(v.threadCount);
+            w.Str(v.reason);
+        }
+        inline bool Read(Reader& r, Optimization::CoreAssignment& v)
+        {
+            return r.Pod(v.group) &&
+                   r.Pod(v.logicalIndex) &&
+                   r.Pod(v.physicalCoreIndex) &&
+                   ReadEnum(r, v.coreClass) &&
+                   r.Pod(v.l2CacheId) &&
+                   r.Pod(v.l3CacheId) &&
+                   r.Pod(v.usagePercent) &&
+                   r.Pod(v.threadCount) &&
+                   r.Str(v.reason);
+        }
+
+        inline void Write(Writer& w, const Optimization::OptimizerState& v)
+        {
+            w.Bool(v.enabled);
+            WriteEnum(w, v.mode);
+            w.Bool(v.running);
+            w.Pod(v.foregroundProcessId);
+            w.Pod(v.targetProcessId);
+            w.Pod(v.lastUpdateMs);
+            w.Pod(v.appliedChanges);
+            w.Pod(v.revertedChanges);
+            w.Pod(v.failedChanges);
+            w.Str(v.status);
+            w.Vec(v.processes, [](Writer& w, const auto& v) { Write(w, v); });
+            w.Vec(v.cores, [](Writer& w, const auto& v) { Write(w, v); });
+        }
+        inline bool Read(Reader& r, Optimization::OptimizerState& v)
+        {
+            return r.Bool(v.enabled) &&
+                   ReadEnum(r, v.mode) &&
+                   r.Bool(v.running) &&
+                   r.Pod(v.foregroundProcessId) &&
+                   r.Pod(v.targetProcessId) &&
+                   r.Pod(v.lastUpdateMs) &&
+                   r.Pod(v.appliedChanges) &&
+                   r.Pod(v.revertedChanges) &&
+                   r.Pod(v.failedChanges) &&
+                   r.Str(v.status) &&
+                   r.Vec(v.processes, [](Reader& r, auto& v) { return Read(r, v); }) &&
+                   r.Vec(v.cores, [](Reader& r, auto& v) { return Read(r, v); });
+        }
+    }
+
+    inline std::vector<std::uint8_t> Serialize(
+        const OptimizerConfigCommand& command)
+    {
+        Writer writer;
+        writer.Bool(command.enabled);
+        Detail::WriteEnum(writer, command.mode);
+        return writer.data;
+    }
+
+    inline bool Deserialize(
+        const std::uint8_t* data,
+        std::size_t size,
+        OptimizerConfigCommand& command)
+    {
+        Reader reader(data, size);
+        return reader.Bool(command.enabled) &&
+               Detail::ReadEnum(reader, command.mode) &&
+               reader.Remaining() == 0;
+    }
+
+    inline std::vector<std::uint8_t> Serialize(
+        const ForegroundProcessCommand& command)
+    {
+        Writer writer;
+        writer.Pod(command.processId);
+        return writer.data;
+    }
+
+    inline bool Deserialize(
+        const std::uint8_t* data,
+        std::size_t size,
+        ForegroundProcessCommand& command)
+    {
+        Reader reader(data, size);
+        return reader.Pod(command.processId) &&
+               reader.Remaining() == 0;
     }
 
     inline std::vector<std::uint8_t> Serialize(const State& state)
@@ -844,10 +1123,14 @@ namespace IPC
         writer.Bool(state.hasMemory);
         writer.Bool(state.hasGpu);
         writer.Bool(state.hasProcesses);
+        writer.Bool(state.hasTopology);
+        writer.Bool(state.hasOptimizer);
         Detail::Write(writer, state.cpu);
         Detail::Write(writer, state.memory);
         Detail::Write(writer, state.gpu);
         Detail::Write(writer, state.processes);
+        Detail::Write(writer, state.topology);
+        Detail::Write(writer, state.optimizer);
         Detail::WriteRing(writer, state.cpuHistory);
         Detail::WriteRing(writer, state.memoryHistory);
         writer.Vec(state.processorHistories, [](Writer& w, const auto& v) { Detail::Write(w, v); });
@@ -870,10 +1153,14 @@ namespace IPC
             !reader.Bool(state.hasMemory) ||
             !reader.Bool(state.hasGpu) ||
             !reader.Bool(state.hasProcesses) ||
+            !reader.Bool(state.hasTopology) ||
+            !reader.Bool(state.hasOptimizer) ||
             !Detail::Read(reader, state.cpu) ||
             !Detail::Read(reader, state.memory) ||
             !Detail::Read(reader, state.gpu) ||
             !Detail::Read(reader, state.processes) ||
+            !Detail::Read(reader, state.topology) ||
+            !Detail::Read(reader, state.optimizer) ||
             !Detail::ReadRing(reader, state.cpuHistory) ||
             !Detail::ReadRing(reader, state.memoryHistory) ||
             !reader.Vec(

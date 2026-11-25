@@ -19,6 +19,20 @@ namespace Tray
         constexpr UINT MenuStopService = 3;
         constexpr UINT MenuExit = 4;
 
+        constexpr int PopupWidth = 300;
+        constexpr int PopupHeight = 260;
+        constexpr int PopupMargin = 12;
+        constexpr int MetricTextTop = 8;
+        constexpr int MetricRowStep = 46;
+        constexpr int MetricTextHeight = 16;
+        constexpr int SparklineTopOffset = 17;
+        constexpr int SparklineHeight = 20;
+        constexpr int SparklineWidth = 276;
+        constexpr int ProcessLineTop = 144;
+        constexpr int GpuLineTop = 160;
+        constexpr int ServiceLineTop = 180;
+        constexpr int ServiceLineStep = 16;
+
         const wchar_t* WindowClass =
             L"ProcessOptimizerTrayWindow";
         const wchar_t* PopupClass =
@@ -69,6 +83,216 @@ namespace Tray
                 top->cpuUsagePercent);
             return buffer;
         }
+
+        std::wstring Utf8ToWide(const std::string& text)
+        {
+            if (text.empty())
+                return L"-";
+
+            int length = MultiByteToWideChar(
+                CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
+
+            if (length <= 0)
+                return L"-";
+
+            std::wstring result(
+                static_cast<std::size_t>(length), L'\0');
+
+            MultiByteToWideChar(
+                CP_UTF8, 0, text.c_str(), -1,
+                result.data(), length);
+
+            result.resize(static_cast<std::size_t>(length) - 1);
+            return result;
+        }
+
+        const wchar_t* ModeName(
+            Optimization::OptimizerMode mode)
+        {
+            switch (mode)
+            {
+            case Optimization::OptimizerMode::Off:
+                return L"Off";
+            case Optimization::OptimizerMode::Gaming:
+                return L"Gaming";
+            case Optimization::OptimizerMode::Multitasking:
+                return L"Multitasking";
+            default:
+                return L"Desconocido";
+            }
+        }
+
+        const IPC::GpuSeriesHistory* SelectedGpuSeries(
+            const IPC::State& state)
+        {
+            const GpuAdapterInfo* top = nullptr;
+
+            if (state.hasGpu)
+            {
+                for (const GpuAdapterInfo& gpu :
+                     state.gpu.gpus)
+                {
+                    if (top == nullptr ||
+                        gpu.usagePercent > top->usagePercent)
+                    {
+                        top = &gpu;
+                    }
+                }
+            }
+
+            if (top != nullptr)
+            {
+                const auto it = std::find_if(
+                    state.overview.gpus.begin(),
+                    state.overview.gpus.end(),
+                    [top](const IPC::GpuSeriesHistory& series)
+                    {
+                        return series.luidLowPart ==
+                                   top->luidLowPart &&
+                               series.luidHighPart ==
+                                   top->luidHighPart;
+                    });
+
+                if (it != state.overview.gpus.end())
+                    return &(*it);
+            }
+
+            if (!state.overview.gpus.empty())
+                return &state.overview.gpus.front();
+
+            return nullptr;
+        }
+
+        template<std::size_t N>
+        void BuildMetric(
+            const IPC::FloatRing<N>& history,
+            int sparklineTop,
+            const wchar_t* label,
+            double current,
+            std::wstring& line,
+            std::vector<POINT>& points)
+        {
+            const std::size_t capacity =
+                history.values.size();
+            const std::size_t count =
+                (std::min)(history.count, capacity);
+
+            std::vector<float> ordered;
+            ordered.reserve(count);
+
+            if (count != 0)
+            {
+                const std::size_t start =
+                    (history.index + capacity - count) %
+                    capacity;
+
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    ordered.push_back(
+                        history.values[(start + i) % capacity]);
+                }
+            }
+
+            double minimum = 0.0;
+            double median = 0.0;
+            double maximum = 0.0;
+
+            if (count != 0)
+            {
+                std::vector<float> sorted = ordered;
+                std::sort(sorted.begin(), sorted.end());
+
+                minimum = sorted.front();
+                maximum = sorted.back();
+
+                if (sorted.size() % 2 != 0)
+                {
+                    median = sorted[sorted.size() / 2];
+                }
+                else
+                {
+                    median =
+                        (static_cast<double>(
+                             sorted[sorted.size() / 2 - 1]) +
+                         sorted[sorted.size() / 2]) /
+                        2.0;
+                }
+            }
+
+            wchar_t buffer[128]{};
+            swprintf_s(
+                buffer,
+                L"%s %.1f%%  mín %.0f / med %.0f / máx %.0f",
+                label, current, minimum, median, maximum);
+            line = buffer;
+
+            points.clear();
+
+            if (count == 0)
+                return;
+
+            points.reserve(count);
+
+            const double span = maximum - minimum;
+            const int usableX = SparklineWidth - 1;
+            const int usableY = SparklineHeight - 1;
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                double normalized =
+                    span > 0.0001
+                        ? (ordered[i] - minimum) / span
+                        : 0.5;
+
+                normalized =
+                    (std::min)(1.0, (std::max)(0.0, normalized));
+
+                const int x =
+                    PopupMargin +
+                    (count == 1
+                         ? 0
+                         : static_cast<int>(
+                               i * usableX / (count - 1)));
+                const int y =
+                    sparklineTop + usableY -
+                    static_cast<int>(normalized * usableY);
+
+                points.push_back({ x, y });
+            }
+        }
+
+        void DrawSparkline(
+            HDC device,
+            const std::vector<POINT>& points,
+            COLORREF color)
+        {
+            if (points.empty())
+                return;
+
+            HPEN pen = CreatePen(PS_SOLID, 1, color);
+            if (pen == nullptr)
+                return;
+
+            HPEN previous =
+                reinterpret_cast<HPEN>(SelectObject(device, pen));
+
+            if (points.size() == 1)
+            {
+                MoveToEx(
+                    device, points[0].x, points[0].y, nullptr);
+                LineTo(
+                    device, points[0].x + 1, points[0].y);
+            }
+            else
+            {
+                Polyline(
+                    device, points.data(),
+                    static_cast<int>(points.size()));
+            }
+
+            SelectObject(device, previous);
+            DeleteObject(pen);
+        }
     }
 
     bool TrayApp::Run(HINSTANCE instance)
@@ -118,7 +342,7 @@ namespace Tray
         popup_ = CreateWindowExW(
             WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
             PopupClass, L"", WS_POPUP | WS_BORDER,
-            0, 0, 250, 150,
+            0, 0, PopupWidth, PopupHeight,
             nullptr, nullptr, instance_, this);
 
         icon_ = LoadIconW(
@@ -300,6 +524,14 @@ namespace Tray
         {
             TrayApp* app = FromWindow(hwnd);
 
+            PopupView view;
+            if (app != nullptr)
+            {
+                std::lock_guard<std::mutex> lock(
+                    app->stateMutex_);
+                view = app->popupView_;
+            }
+
             PAINTSTRUCT paint{};
             HDC device = BeginPaint(hwnd, &paint);
 
@@ -313,27 +545,57 @@ namespace Tray
 
             HFONT font = reinterpret_cast<HFONT>(
                 GetStockObject(DEFAULT_GUI_FONT));
-            SelectObject(device, font);
+            HFONT previousFont = reinterpret_cast<HFONT>(
+                SelectObject(device, font));
 
             SetBkMode(device, TRANSPARENT);
             SetTextColor(device, RGB(235, 238, 245));
 
-            RECT textRect = rect;
-            textRect.left += 12;
-            textRect.top += 10;
-            textRect.right -= 12;
+            const int right = (std::max)(
+                PopupMargin + 1,
+                static_cast<int>(rect.right) - PopupMargin);
 
-            std::wstring text;
-            if (app != nullptr)
+            auto drawLine =
+                [device, right](const std::wstring& text, int top)
             {
-                std::lock_guard<std::mutex> lock(
-                    app->stateMutex_);
-                text = app->popupText_;
+                RECT lineRect{
+                    PopupMargin, top, right,
+                    top + MetricTextHeight };
+
+                DrawTextW(
+                    device, text.c_str(), -1, &lineRect,
+                    DT_LEFT | DT_TOP | DT_SINGLELINE |
+                        DT_END_ELLIPSIS | DT_NOPREFIX);
+            };
+
+            for (int i = 0; i < 3; ++i)
+            {
+                drawLine(
+                    view.metricLines[i],
+                    MetricTextTop + i * MetricRowStep);
             }
 
-            DrawTextW(
-                device, text.c_str(), -1, &textRect,
-                DT_LEFT | DT_TOP);
+            DrawSparkline(
+                device, view.cpuPoints,
+                RGB(120, 200, 255));
+            DrawSparkline(
+                device, view.memoryPoints,
+                RGB(255, 190, 110));
+            DrawSparkline(
+                device, view.gpuPoints,
+                RGB(160, 255, 170));
+
+            drawLine(view.processLine, ProcessLineTop);
+            drawLine(view.gpuLine, GpuLineTop);
+
+            for (int i = 0; i < 3; ++i)
+            {
+                drawLine(
+                    view.serviceLines[i],
+                    ServiceLineTop + i * ServiceLineStep);
+            }
+
+            SelectObject(device, previousFont);
 
             EndPaint(hwnd, &paint);
             return 0;
@@ -364,36 +626,138 @@ namespace Tray
                     connected_ = false;
                 }
 
-                popupText_.clear();
+                PopupView view;
 
                 if (ok)
                 {
-                    wchar_t buffer[512]{};
+                    const int sparklineTop =
+                        MetricTextTop + SparklineTopOffset;
 
-                    swprintf_s(
-                        buffer,
-                        L"CPU      %.1f%%\n"
-                        L"RAM      %.1f%%\n"
-                        L"GPU      %.1f%%\n"
-                        L"Proceso  %s\n"
-                        L"Modo     Servicio",
+                    BuildMetric(
+                        state_.cpuHistory, sparklineTop, L"CPU",
                         state_.hasCpu
                             ? state_.cpu.totalUsagePercent
                             : 0.0,
+                        view.metricLines[0],
+                        view.cpuPoints);
+
+                    BuildMetric(
+                        state_.memoryHistory,
+                        sparklineTop + MetricRowStep, L"RAM",
                         state_.hasMemory
                             ? state_.memory.usagePercent
                             : 0.0,
-                        MaxGpuUsage(state_),
-                        TopProcess(state_).c_str());
+                        view.metricLines[1],
+                        view.memoryPoints);
 
-                    popupText_ = buffer;
+                    const IPC::GpuSeriesHistory* gpuSeries =
+                        SelectedGpuSeries(state_);
+                    const IPC::OverviewRing emptyGpuHistory{};
+                    const IPC::OverviewRing& gpuHistory =
+                        gpuSeries != nullptr
+                            ? gpuSeries->usage
+                            : emptyGpuHistory;
+
+                    BuildMetric(
+                        gpuHistory,
+                        sparklineTop + 2 * MetricRowStep,
+                        L"GPU", MaxGpuUsage(state_),
+                        view.metricLines[2],
+                        view.gpuPoints);
+
+                    view.processLine =
+                        L"Proceso: " + TopProcess(state_);
+                    view.gpuLine =
+                        L"GPU: " +
+                        (gpuSeries != nullptr
+                             ? Utf8ToWide(gpuSeries->name)
+                             : L"-");
+
+                    view.serviceLines[0] =
+                        L"Servicio: Conectado";
+
+                    wchar_t buffer[128]{};
+
+                    if (!state_.hasOptimizer)
+                    {
+                        view.serviceLines[1] =
+                            L"Optimizador: sin datos";
+                        view.serviceLines[2] =
+                            L"Actualización: -";
+                    }
+                    else
+                    {
+                        swprintf_s(
+                            buffer,
+                            L"Optimizador: %s - %s",
+                            state_.optimizer.enabled
+                                ? L"Activado"
+                                : L"Desactivado",
+                            ModeName(state_.optimizer.mode));
+                        view.serviceLines[1] = buffer;
+
+                        const ULONGLONG lastUpdate =
+                            state_.optimizer.lastUpdateMs;
+
+                        if (lastUpdate == 0)
+                        {
+                            view.serviceLines[2] =
+                                L"Actualización: -";
+                        }
+                        else
+                        {
+                            const ULONGLONG now =
+                                GetTickCount64();
+                            const ULONGLONG elapsed =
+                                now >= lastUpdate
+                                    ? now - lastUpdate
+                                    : 0;
+
+                            if (elapsed < 1000)
+                            {
+                                view.serviceLines[2] =
+                                    L"Actualización: ahora";
+                            }
+                            else if (elapsed < 60000)
+                            {
+                                swprintf_s(
+                                    buffer,
+                                    L"Actualización: hace %llu s",
+                                    static_cast<unsigned long long>(
+                                        elapsed / 1000));
+                                view.serviceLines[2] = buffer;
+                            }
+                            else
+                            {
+                                swprintf_s(
+                                    buffer,
+                                    L"Actualización: hace %llu min",
+                                    static_cast<unsigned long long>(
+                                        elapsed / 60000));
+                                view.serviceLines[2] = buffer;
+                            }
+                        }
+                    }
                 }
                 else
                 {
-                    popupText_ =
-                        L"Servicio detenido\n"
-                        L"Modo local";
+                    view.metricLines[0] =
+                        L"CPU  --  mín -- / med -- / máx --";
+                    view.metricLines[1] =
+                        L"RAM  --  mín -- / med -- / máx --";
+                    view.metricLines[2] =
+                        L"GPU  --  mín -- / med -- / máx --";
+                    view.processLine = L"Proceso: -";
+                    view.gpuLine = L"GPU: -";
+                    view.serviceLines[0] =
+                        L"Servicio: Detenido";
+                    view.serviceLines[1] =
+                        L"Optimizador: sin datos";
+                    view.serviceLines[2] =
+                        L"Actualización: -";
                 }
+
+                popupView_ = view;
             }
 
             UpdateTooltip();
@@ -445,8 +809,8 @@ namespace Tray
         POINT point{};
         GetCursorPos(&point);
 
-        int width = 250;
-        int height = 150;
+        int width = PopupWidth;
+        int height = PopupHeight;
         int screenWidth = GetSystemMetrics(SM_CXSCREEN);
         int screenHeight = GetSystemMetrics(SM_CYSCREEN);
 

@@ -217,6 +217,32 @@ namespace Service
         return ChangeMask::Processes;
     }
 
+    std::uint32_t MonitorState::SetTopology(
+        const Optimization::TopologySnapshot& topology)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        state_.topology = topology;
+        state_.hasTopology = true;
+        state_.changedMask = ChangeMask::Topology;
+        ++state_.sequence;
+        state_.timestampMs = NowMs();
+        return ChangeMask::Topology;
+    }
+
+    std::uint32_t MonitorState::SetOptimizer(
+        const Optimization::OptimizerState& optimizer)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        state_.optimizer = optimizer;
+        state_.hasOptimizer = true;
+        state_.changedMask = ChangeMask::Optimization;
+        ++state_.sequence;
+        state_.timestampMs = NowMs();
+        return ChangeMask::Optimization;
+    }
+
     IPC::State MonitorState::Snapshot() const
     {
         std::lock_guard<std::mutex> lock(mutex_);

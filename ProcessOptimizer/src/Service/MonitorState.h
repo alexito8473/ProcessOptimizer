@@ -14,6 +14,8 @@ namespace Service
         inline constexpr std::uint32_t Memory = 1u << 1;
         inline constexpr std::uint32_t Gpu = 1u << 2;
         inline constexpr std::uint32_t Processes = 1u << 3;
+        inline constexpr std::uint32_t Topology = 1u << 4;
+        inline constexpr std::uint32_t Optimization = 1u << 5;
 
         inline constexpr std::uint32_t Overview =
             Cpu | Memory | Gpu | Processes;
@@ -29,6 +31,11 @@ namespace Service
         std::uint32_t ApplyMemory(const MemorySnapshot& snapshot);
         std::uint32_t ApplyGpu(const GpuSnapshot& snapshot);
         std::uint32_t ApplyProcesses(const ProcessSnapshot& snapshot);
+
+        std::uint32_t SetTopology(
+            const Optimization::TopologySnapshot& topology);
+        std::uint32_t SetOptimizer(
+            const Optimization::OptimizerState& optimizer);
 
         IPC::State Snapshot() const;
 

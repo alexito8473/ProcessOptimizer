@@ -88,8 +88,11 @@ namespace IPC
         }
     }
 
-    PipeServer::PipeServer(StateProvider provider)
-        : provider_(std::move(provider))
+    PipeServer::PipeServer(
+        StateProvider provider,
+        CommandHandler handler)
+        : provider_(std::move(provider)),
+          handler_(std::move(handler))
     {
     }
 
@@ -237,9 +240,30 @@ namespace IPC
     void PipeServer::ServeClient(HANDLE pipe)
     {
         std::uint32_t rawRequest = 0;
+        std::uint32_t requestSize = 0;
 
-        if (!ReadExact(
-                pipe, &rawRequest, sizeof(rawRequest)))
+        bool ok = ReadExact(
+                      pipe, &rawRequest, sizeof(rawRequest)) &&
+                  ReadExact(
+                      pipe, &requestSize, sizeof(requestSize));
+
+        constexpr std::uint32_t MaxRequestSize =
+            1024 * 1024;
+
+        if (!ok || requestSize > MaxRequestSize)
+        {
+            CloseClient(pipe);
+            return;
+        }
+
+        std::vector<std::uint8_t> requestPayload(
+            requestSize);
+
+        if (requestSize != 0 &&
+            !ReadExact(
+                pipe,
+                requestPayload.data(),
+                requestSize))
         {
             CloseClient(pipe);
             return;
@@ -274,6 +298,21 @@ namespace IPC
             break;
         }
 
+        case Request::SetOptimizerConfig:
+        case Request::SetForegroundProcess:
+        {
+            const bool handled =
+                handler_ &&
+                handler_(request, requestPayload);
+
+            header.type =
+                static_cast<std::uint32_t>(
+                    handled
+                        ? ResponseType::Ack
+                        : ResponseType::Error);
+            break;
+        }
+
         default:
             header.type =
                 static_cast<std::uint32_t>(
@@ -284,12 +323,12 @@ namespace IPC
         header.payloadSize =
             static_cast<std::uint32_t>(payload.size());
 
-        bool ok = WriteExact(
-                      pipe, &header, sizeof(header)) &&
-                  (payload.empty() ||
-                   WriteExact(
-                       pipe, payload.data(),
-                       static_cast<DWORD>(payload.size())));
+        ok = WriteExact(
+                 pipe, &header, sizeof(header)) &&
+             (payload.empty() ||
+              WriteExact(
+                  pipe, payload.data(),
+                  static_cast<DWORD>(payload.size())));
 
         if (ok)
             FlushFileBuffers(pipe);
@@ -299,30 +338,71 @@ namespace IPC
 
     bool PipeClient::Ping()
     {
-        std::vector<std::uint8_t> payload;
+        std::vector<std::uint8_t> requestPayload;
+        std::vector<std::uint8_t> responsePayload;
         return RoundTrip(
-            Request::Ping, ResponseType::Pong, payload);
+            Request::Ping,
+            ResponseType::Pong,
+            requestPayload,
+            responsePayload);
     }
 
     bool PipeClient::GetState(State& state)
     {
-        std::vector<std::uint8_t> payload;
+        std::vector<std::uint8_t> requestPayload;
+        std::vector<std::uint8_t> responsePayload;
+
         if (!RoundTrip(
                 Request::GetState,
                 ResponseType::State,
-                payload))
+                requestPayload,
+                responsePayload))
         {
             return false;
         }
 
         return Deserialize(
-            payload.data(), payload.size(), state);
+            responsePayload.data(),
+            responsePayload.size(),
+            state);
+    }
+
+    bool PipeClient::SetOptimizerConfig(
+        bool enabled,
+        Optimization::OptimizerMode mode)
+    {
+        OptimizerConfigCommand command;
+        command.enabled = enabled;
+        command.mode = mode;
+
+        std::vector<std::uint8_t> responsePayload;
+
+        return RoundTrip(
+            Request::SetOptimizerConfig,
+            ResponseType::Ack,
+            Serialize(command),
+            responsePayload);
+    }
+
+    bool PipeClient::SetForegroundProcess(DWORD processId)
+    {
+        ForegroundProcessCommand command;
+        command.processId = processId;
+
+        std::vector<std::uint8_t> responsePayload;
+
+        return RoundTrip(
+            Request::SetForegroundProcess,
+            ResponseType::Ack,
+            Serialize(command),
+            responsePayload);
     }
 
     bool PipeClient::RoundTrip(
         Request request,
         ResponseType expected,
-        std::vector<std::uint8_t>& payload)
+        const std::vector<std::uint8_t>& requestPayload,
+        std::vector<std::uint8_t>& responsePayload)
     {
         HANDLE pipe = CreateFileW(
             PipeName,
@@ -342,9 +422,25 @@ namespace IPC
 
         const std::uint32_t rawRequest =
             static_cast<std::uint32_t>(request);
+        const std::uint32_t rawRequestSize =
+            static_cast<std::uint32_t>(
+                requestPayload.size());
 
-        bool ok = WriteExact(
-            pipe, &rawRequest, sizeof(rawRequest));
+        bool ok =
+            WriteExact(
+                pipe, &rawRequest, sizeof(rawRequest)) &&
+            WriteExact(
+                pipe, &rawRequestSize,
+                sizeof(rawRequestSize));
+
+        if (ok && rawRequestSize != 0)
+        {
+            ok = WriteExact(
+                pipe,
+                requestPayload.data(),
+                static_cast<DWORD>(
+                    requestPayload.size()));
+        }
 
         ResponseHeader header{};
         if (ok)
@@ -364,14 +460,16 @@ namespace IPC
 
         if (ok && header.payloadSize != 0)
         {
-            payload.resize(header.payloadSize);
+            responsePayload.resize(
+                header.payloadSize);
             ok = ReadExact(
-                pipe, payload.data(),
-                static_cast<DWORD>(payload.size()));
+                pipe, responsePayload.data(),
+                static_cast<DWORD>(
+                    responsePayload.size()));
         }
         else
         {
-            payload.clear();
+            responsePayload.clear();
         }
 
         CloseHandle(pipe);

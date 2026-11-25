@@ -282,6 +282,8 @@ std::uint32_t Window::PageDirtyMask(int page)
         return UI::Core::Mask(UiComponent::GpuPage);
     case 4:
         return UI::Core::Mask(UiComponent::ProcessPage);
+    case 5:
+        return UI::Core::Mask(UiComponent::OptimizationPage);
     default:
         // Settings es estático: no tiene datos que invalidar.
         return 0;
@@ -292,6 +294,11 @@ Window::Window()
 {
     sharedState_ = std::make_shared<SharedState>();
     themeSettings_ = UI::Theme::LoadSettings();
+
+    optimizerEnabledPref_.store(
+        themeSettings_.optimizerEnabled);
+    optimizerModePref_.store(
+        themeSettings_.optimizerMode);
 
     // Crear el archivo con los valores por defecto si no existe, para que
     // se pueda editar directamente antes de abrir la aplicacion.
@@ -604,7 +611,8 @@ void Window::RenderDashboard()
         {2, UI::Localization::Text::Ram},
         {3, UI::Localization::Text::Gpu},
         {4, UI::Localization::Text::Processes},
-        {5, UI::Localization::Text::Settings}
+        {5, UI::Localization::Text::Optimization},
+        {6, UI::Localization::Text::Settings}
     };
 
     for (const PageEntry& page : pages)
@@ -869,6 +877,61 @@ void Window::RenderRegionContent()
 
     case 5:
     {
+        Optimization::TopologySnapshot topology{};
+        Optimization::OptimizerState optimizer{};
+        bool hasTopology = false;
+        bool hasOptimizer = false;
+
+        {
+            std::lock_guard<std::mutex> lock(
+                sharedState_->mutex);
+
+            hasTopology = sharedState_->hasTopology;
+            hasOptimizer = sharedState_->hasOptimizer;
+
+            if (hasTopology)
+                topology = sharedState_->topology;
+            if (hasOptimizer)
+                optimizer = sharedState_->optimizer;
+        }
+
+        UI::Theme::AppSettings settings =
+            themeSettings_;
+
+        const UI::Screens::Optimization::OptimizationCommand
+            command =
+                UI::Screens::Optimization::
+                    OptimizationScreen::Render(
+                        settings,
+                        palette_,
+                        themeSettings_.language,
+                        topology,
+                        optimizer,
+                        hasTopology,
+                        hasOptimizer,
+                        serviceMode_.load());
+
+        SetAppSettings(settings);
+
+        if (command.changed)
+        {
+            IPC::PipeClient client;
+            if (client.SetOptimizerConfig(
+                    command.enabled,
+                    command.mode))
+            {
+                optimizerConfigSent_.store(true);
+            }
+
+            scheduler_.Invalidate(
+                UI::Core::UiComponent::OptimizationPage);
+            RequestFrame();
+        }
+        break;
+    }
+
+    case 6:
+    {
         UI::Theme::AppSettings settings =
             themeSettings_;
 
@@ -1089,9 +1152,18 @@ void Window::OnSystemThemeChanged()
 void Window::SetAppSettings(
     const UI::Theme::AppSettings& settings)
 {
+    optimizerEnabledPref_.store(
+        settings.optimizerEnabled);
+    optimizerModePref_.store(
+        settings.optimizerMode);
+
     if (settings.mode == themeSettings_.mode &&
         settings.design == themeSettings_.design &&
-        settings.language == themeSettings_.language)
+        settings.language == themeSettings_.language &&
+        settings.optimizerEnabled ==
+            themeSettings_.optimizerEnabled &&
+        settings.optimizerMode ==
+            themeSettings_.optimizerMode)
     {
         return;
     }
@@ -1461,6 +1533,11 @@ void Window::ServiceClientLoop()
             if (!wasServiceMode || subscribed_)
                 StopMonitoring();
 
+            if (!optimizerConfigSent_.exchange(true))
+                ApplySavedOptimizerConfig(client);
+
+            SendForegroundProcess(client);
+
             if (remote.sequence != lastRemoteSequence_)
             {
                 ApplyRemoteState(remote);
@@ -1472,12 +1549,54 @@ void Window::ServiceClientLoop()
             continue;
         }
 
+        optimizerConfigSent_.store(false);
+        lastForegroundPid_ = 0;
+
         if (serviceMode_.exchange(false))
             StartMonitoring();
 
         std::this_thread::sleep_for(
             std::chrono::milliseconds(1500));
     }
+}
+
+void Window::ApplySavedOptimizerConfig(
+    IPC::PipeClient& client)
+{
+    const bool enabled = optimizerEnabledPref_.load();
+    const int modeValue = optimizerModePref_.load();
+
+    const Optimization::OptimizerMode mode =
+        static_cast<Optimization::OptimizerMode>(
+            (std::min)(2, (std::max)(0, modeValue)));
+
+    client.SetOptimizerConfig(
+        enabled && mode != Optimization::OptimizerMode::Off,
+        mode);
+}
+
+void Window::SendForegroundProcess(
+    IPC::PipeClient& client)
+{
+    HWND foreground = GetForegroundWindow();
+    if (foreground == nullptr)
+        return;
+
+    DWORD processId = 0;
+    GetWindowThreadProcessId(foreground, &processId);
+
+    if (processId == 0 ||
+        processId == GetCurrentProcessId() ||
+        foreground == hwnd_)
+    {
+        processId = 0;
+    }
+
+    if (processId == lastForegroundPid_)
+        return;
+
+    if (client.SetForegroundProcess(processId))
+        lastForegroundPid_ = processId;
 }
 
 void Window::ApplyRemoteState(const IPC::State& state)
@@ -1596,6 +1715,18 @@ void Window::ApplyRemoteState(const IPC::State& state)
             shared.processSnapshot = state.processes;
             shared.hasProcessSnapshot = true;
         }
+
+        if (state.hasTopology)
+        {
+            shared.topology = state.topology;
+            shared.hasTopology = true;
+        }
+
+        if (state.hasOptimizer)
+        {
+            shared.optimizer = state.optimizer;
+            shared.hasOptimizer = true;
+        }
     }
 
     std::uint32_t invalidated = 0;
@@ -1608,6 +1739,13 @@ void Window::ApplyRemoteState(const IPC::State& state)
         invalidated |= PageDirtyMask(0) | PageDirtyMask(3);
     if (state.changedMask & Service::ChangeMask::Processes)
         invalidated |= PageDirtyMask(0) | PageDirtyMask(4);
+    if (state.changedMask & Service::ChangeMask::Topology)
+        invalidated |= PageDirtyMask(5);
+    if (state.changedMask &
+        Service::ChangeMask::Optimization)
+    {
+        invalidated |= PageDirtyMask(5);
+    }
 
     if (invalidated == 0)
         invalidated = PageDirtyMask(0);

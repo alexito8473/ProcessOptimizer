@@ -16,10 +16,11 @@ namespace UI::Core
         MemoryModules  = 1u << 4,
         GpuPage        = 1u << 5,
         ProcessPage    = 1u << 6,
+        OptimizationPage = 1u << 7,
 
         All = OverviewPage | CpuPage | MemorySummary |
               MemoryChart | MemoryModules | GpuPage |
-              ProcessPage
+              ProcessPage | OptimizationPage
     };
 
     constexpr std::uint32_t Mask(UiComponent component)
