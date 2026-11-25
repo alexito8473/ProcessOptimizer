@@ -102,8 +102,10 @@ GpuPerformance::~GpuPerformance()
     Shutdown();
 }
 
-bool GpuPerformance::Initialize()
+void GpuPerformance::RebuildQuery()
 {
+    lastRebuild_ = std::chrono::steady_clock::now();
+
     Shutdown();
 
     PDH_STATUS status = PdhOpenQueryW(
@@ -113,18 +115,26 @@ bool GpuPerformance::Initialize()
     );
 
     if (status != ERROR_SUCCESS)
-        return false;
+    {
+        query_ = nullptr;
+        return;
+    }
 
     if (!EnumerateCounters())
     {
         Shutdown();
-        return false;
+        return;
     }
 
     initialized_ = true;
     firstSample_ = true;
+    consecutiveReadFailures_ = 0;
+}
 
-    return true;
+bool GpuPerformance::Initialize()
+{
+    RebuildQuery();
+    return initialized_;
 }
 
 GpuEngineType GpuPerformance::ParseEngineType(
@@ -139,6 +149,15 @@ GpuEngineType GpuPerformance::ParseEngineType(
     const std::wstring type = name.substr(
         pos + 8
     );
+
+    // El escritorio usa GDI Render y algunos motores no declaran tipo.
+    // Descartarlos hacia que usagePercent quedara a 0 en equipos donde
+    // solo esos motores estan activos.
+    if (type.empty())
+        return GpuEngineType::Other;
+
+    if (type == L"GDI Render")
+        return GpuEngineType::Graphics;
 
     if (type == L"3D")
         return GpuEngineType::ThreeD;
@@ -269,13 +288,36 @@ bool GpuPerformance::Update(
     std::vector<GpuAdapterInfo>& adapters
 )
 {
-    if (!initialized_ || !query_)
+    // GPU Engine puede no tener instancias cuando se inicializa el
+    // servicio. Reintentar periodicamente en lugar de desactivar la
+    // lectura para siempre.
+    constexpr auto RebuildInterval = std::chrono::seconds(5);
+
+    const auto now = std::chrono::steady_clock::now();
+    const bool retryDue = now - lastRebuild_ >= RebuildInterval;
+
+    if (!initialized_ ||
+        (counters_.empty() && retryDue) ||
+        (consecutiveReadFailures_ >= 3 && retryDue))
+    {
+        RebuildQuery();
+    }
+
+    for (auto& adapter : adapters)
+        adapter.performanceAvailable = false;
+
+    if (!initialized_ || !query_ || counters_.empty())
         return false;
 
     PDH_STATUS status = PdhCollectQueryData(query_);
 
     if (status != ERROR_SUCCESS)
+    {
+        ++consecutiveReadFailures_;
         return false;
+    }
+
+    consecutiveReadFailures_ = 0;
 
     // PDH necesita una primera recogida para
     // disponer de datos de los contadores.
@@ -297,16 +339,25 @@ bool GpuPerformance::Update(
         adapter.usageVideoProcessing = 0.0;
         adapter.usageCompute = 0.0;
 
+        const DWORD high =
+            static_cast<DWORD>(adapter.luidHighPart);
+        const DWORD low = adapter.luidLowPart;
+
         std::map<EngineKey, EngineValue> physicalEngines;
 
         for (const CounterEntry& entry : counters_)
         {
-            if (entry.luidLow != adapter.luidLowPart ||
-                entry.luidHigh !=
-                static_cast<DWORD>(adapter.luidHighPart))
-            {
+            // El formato del contador no garantiza el orden de las
+            // partes del LUID. Aceptar ambos evita que todos los
+            // contadores queden sin emparejar con el adaptador DXGI.
+            const bool luidMatches =
+                (entry.luidHigh == high &&
+                 entry.luidLow == low) ||
+                (entry.luidHigh == low &&
+                 entry.luidLow == high);
+
+            if (!luidMatches)
                 continue;
-            }
 
             PDH_FMT_COUNTERVALUE value{};
 
@@ -322,6 +373,8 @@ bool GpuPerformance::Update(
             {
                 continue;
             }
+
+            adapter.performanceAvailable = true;
 
             double usage = value.doubleValue;
 
@@ -433,6 +486,7 @@ void GpuPerformance::Shutdown()
 
     initialized_ = false;
     firstSample_ = true;
+    consecutiveReadFailures_ = 0;
 }
 
 bool GpuPerformance::IsInitialized() const

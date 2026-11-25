@@ -13,7 +13,8 @@ enum class GpuEngineType
     VideoProcessing,
     Compute,
     Graphics,
-    Overlay
+    Overlay,
+    Other
 };
 
 struct GpuEngineInfo
@@ -54,6 +55,10 @@ struct GpuAdapterInfo
     double processSharedMemoryUsagePercent = 0.0;
     // Uso general
     double usagePercent = 0.0;
+
+    // Los contadores PDH pueden no estar disponibles al arrancar o en
+    // sesion 0. False indica que 0.0 no es una lectura real.
+    bool performanceAvailable = false;
 
     // Uso por motor
     std::vector<GpuEngineInfo> engines;

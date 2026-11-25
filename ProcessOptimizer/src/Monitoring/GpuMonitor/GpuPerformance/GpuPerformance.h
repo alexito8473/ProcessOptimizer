@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <Pdh.h>
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,14 @@ private:
 
     bool initialized_ = false;
     bool firstSample_ = true;
+
+    std::chrono::steady_clock::time_point lastRebuild_{};
+    int consecutiveReadFailures_ = 0;
+
+    // Los contadores de GPU Engine pueden no existir todavia cuando el
+    // servicio arranca (sesion 0). RebuildQuery permite reintentarlo sin
+    // duplicar contadores en la consulta PDH.
+    void RebuildQuery();
 
     bool EnumerateCounters();
 

@@ -21,7 +21,7 @@ namespace IPC
     inline constexpr wchar_t PipeName[] =
         L"\\\\.\\pipe\\ProcessOptimizer.Monitor";
     inline constexpr std::uint32_t ProtocolMagic = 0x504F4D31; // "POM1"
-    inline constexpr std::uint32_t ProtocolVersion = 2;
+    inline constexpr std::uint32_t ProtocolVersion = 3;
 
     enum class Request : std::uint32_t
     {
@@ -596,6 +596,7 @@ namespace IPC
             w.Pod(v.processSharedMemoryBudgetBytes);
             w.Pod(v.processSharedMemoryUsagePercent);
             w.Pod(v.usagePercent);
+            w.Bool(v.performanceAvailable);
             w.Vec(v.engines, [](Writer& w, const auto& v) { Write(w, v); });
             w.Pod(v.usage3D);
             w.Pod(v.usageCopy);
@@ -653,6 +654,7 @@ namespace IPC
                    r.Pod(v.processSharedMemoryBudgetBytes) &&
                    r.Pod(v.processSharedMemoryUsagePercent) &&
                    r.Pod(v.usagePercent) &&
+                   r.Bool(v.performanceAvailable) &&
                    r.Vec(v.engines, [](Reader& r, auto& v) { return Read(r, v); }) &&
                    r.Pod(v.usage3D) && r.Pod(v.usageCopy) &&
                    r.Pod(v.usageVideoDecode) &&

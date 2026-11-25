@@ -85,6 +85,7 @@ namespace UI::Dashboard::Gpu
             case GpuEngineType::Compute:           return "Compute";
             case GpuEngineType::Graphics:          return "Graphics";
             case GpuEngineType::Overlay:            return "Overlay";
+            case GpuEngineType::Other:             return "Other";
             default:                               return "Unknown";
             }
         }
@@ -251,7 +252,19 @@ namespace UI::Dashboard::Gpu
             SectionTitle("GPU OVERVIEW", "Current adapter status");
 
             const std::string usage =
-                std::to_string(static_cast<int>(gpu.usagePercent)) + "%";
+                gpu.performanceAvailable
+                    ? std::to_string(
+                          static_cast<int>(
+                              gpu.usagePercent)) + "%"
+                    : "n/a";
+
+            if (!gpu.performanceAvailable)
+            {
+                ImGui::TextDisabled(
+                    "Contadores de GPU no disponibles todavia. "
+                    "Reintentando automaticamente...");
+                ImGui::Spacing();
+            }
 
             const std::string vram =
                 FormatBytes(gpu.dedicatedVideoMemoryBytes);
@@ -291,7 +304,9 @@ namespace UI::Dashboard::Gpu
             if (gpu.engines.empty())
             {
                 ImGui::TextDisabled(
-                    "No GPU engine counters are currently available."
+                    gpu.performanceAvailable
+                        ? "No hay contadores de motor GPU disponibles ahora."
+                        : "Contadores de GPU no disponibles todavia. Reintentando automaticamente..."
                 );
                 return;
             }

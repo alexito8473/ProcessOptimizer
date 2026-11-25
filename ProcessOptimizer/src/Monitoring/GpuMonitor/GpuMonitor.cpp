@@ -148,11 +148,10 @@ bool GpuMonitor::Update()
         }
     }
 
-    // Actualizar rendimiento mediante PDH.
-    if (performance_.IsInitialized())
-    {
-        performance_.Update(snapshot_.gpus);
-    }
+    // Actualizar rendimiento mediante PDH. Se llama siempre para que
+    // GpuPerformance pueda reenumerar contadores si no habia instancias
+    // al arrancar; el propio Update marca performanceAvailable.
+    performance_.Update(snapshot_.gpus);
 
     // Actualizar información que cambia con poca frecuencia.
     const auto now = std::chrono::steady_clock::now();
