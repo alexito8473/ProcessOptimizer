@@ -39,6 +39,14 @@ namespace Optimization
         Failed = 4
     };
 
+    enum class BenchmarkStatus : std::int32_t
+    {
+        Idle = 0,
+        Running = 1,
+        Completed = 2,
+        Failed = 3
+    };
+
     struct GroupMask
     {
         WORD group = 0;
@@ -163,6 +171,45 @@ namespace Optimization
         std::string reason;
     };
 
+    // Resultado medido de un procesador logico durante una prueba corta
+    // y bajo demanda. No se estima: peakMHz y workRate vienen de lecturas
+    // reales tomadas mientras los hilos de prueba estaban cargando el CPU.
+    struct ProcessorBenchmark
+    {
+        WORD group = 0;
+        BYTE logicalIndex = 0;
+        std::uint32_t physicalCoreIndex = 0;
+        CoreClass coreClass = CoreClass::Unknown;
+
+        double peakMHz = 0.0;
+        double averageMHz = 0.0;
+        double workRate = 0.0;
+        double score = 0.0;
+        std::uint16_t rank = 0;
+    };
+
+    struct CpuBenchmarkProfile
+    {
+        std::uint32_t version = 1;
+        std::uint64_t createdMs = 0;
+        std::uint32_t durationMs = 0;
+        std::uint64_t topologySignature = 0;
+        std::vector<ProcessorBenchmark> processors;
+
+        bool HasData() const
+        {
+            return !processors.empty();
+        }
+    };
+
+    struct BenchmarkState
+    {
+        BenchmarkStatus status = BenchmarkStatus::Idle;
+        std::uint32_t progressPercent = 0;
+        std::string statusText;
+        CpuBenchmarkProfile profile;
+    };
+
     struct OptimizerState
     {
         bool enabled = false;
@@ -178,6 +225,7 @@ namespace Optimization
         std::uint32_t failedChanges = 0;
 
         std::string status;
+        BenchmarkState benchmark;
         std::vector<ProcessPlan> processes;
         std::vector<CoreAssignment> cores;
     };

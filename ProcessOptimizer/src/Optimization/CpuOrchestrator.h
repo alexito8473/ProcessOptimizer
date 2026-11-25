@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -18,9 +19,16 @@
 
 namespace Optimization
 {
-    // Orquestador real: decide, aplica y verifica afinidad, nucleo ideal
-    // y prioridades. Trabaja con el planificador de Windows: nunca amplia
-    // la afinidad original ni toca procesos criticos.
+    struct CpuSetMap
+    {
+        std::unordered_map<std::uint32_t, ULONG> idByProcessor;
+        bool available = false;
+    };
+
+    // Orquestador real: reparte los hilos cargados por nucleos fisicos
+    // usando CPU Sets (afinidad blanda compatible con la gestion de
+    // energia de Windows). No toca prioridades ni afinidades duras y
+    // nunca interactua con procesos criticos.
     class CpuOrchestrator
     {
     public:
@@ -43,6 +51,11 @@ namespace Optimization
         void SetEnabled(bool enabled);
         void SetMode(OptimizerMode mode);
         void SetForegroundProcess(DWORD processId);
+
+        void SetBenchmarkProfile(
+            const CpuBenchmarkProfile& profile);
+        bool HasBenchmarkProfile() const;
+        void SetStatusMessage(const std::string& status);
 
         OptimizerState State() const;
 
@@ -115,6 +128,9 @@ namespace Optimization
             }
         };
 
+        static constexpr std::size_t NoCore =
+            (std::numeric_limits<std::size_t>::max)();
+
         struct PendingIsland
         {
             std::uint16_t island = 0;
@@ -135,9 +151,22 @@ namespace Optimization
             std::uint64_t affinity = 0;
             DWORD idealProcessor = 0;
             int priority = 0;
+            std::vector<ULONG> cpuSetIds;
             bool hasAffinity = false;
             bool hasIdeal = false;
             bool hasPriority = false;
+            bool hasCpuSets = false;
+            bool idealChanged = false;
+        };
+
+        // Ultima decision estable por hilo. Se conserva aunque la carga
+        // cambie un poco: migrar cada pocos segundos empeora el frame time.
+        struct ThreadDecision
+        {
+            std::size_t coreIndex = NoCore;
+            std::size_t candidateCore = NoCore;
+            std::uint8_t confirmations = 0;
+            std::uint64_t changedTick = 0;
         };
 
         struct Candidate
@@ -169,6 +198,9 @@ namespace Optimization
         bool GetThreadStart(
             DWORD threadId,
             std::uint64_t& startTime100ns) const;
+        bool QueryThreadCpuSets(
+            HANDLE thread,
+            std::vector<ULONG>& ids) const;
         bool IsCritical(const std::wstring& name) const;
         bool IsUserSession(DWORD processId) const;
 
@@ -192,15 +224,31 @@ namespace Optimization
             std::uint64_t originalAffinity,
             const std::vector<TopologyProcessor>& processors) const;
 
-        bool BuildTarget(
+        double CoreScore(
+            const TopologySnapshot& topology,
+            std::size_t coreIndex,
+            std::uint16_t island,
+            WORD group,
+            std::uint64_t originalAffinity,
+            bool targetProcess,
+            double bestCeiling,
+            std::size_t preferredCore) const;
+
+        bool BuildCoreRanking(
             const TopologySnapshot& topology,
             std::uint16_t island,
             WORD group,
             std::uint64_t originalAffinity,
             bool targetProcess,
-            std::vector<std::size_t>& chosenProcessors,
-            std::uint64_t& targetAffinity,
-            DWORD& idealProcessor) const;
+            std::size_t preferredCore,
+            std::vector<std::pair<double, std::size_t>>& ranking) const;
+
+        std::vector<ULONG> CpuSetIdsForCore(
+            const TopologySnapshot& topology,
+            std::size_t coreIndex,
+            WORD group,
+            std::uint64_t affinity,
+            const CpuSetMap& cpuSets) const;
 
         void Publish();
 
@@ -217,6 +265,7 @@ namespace Optimization
         ProcessSnapshot processSnapshot_;
         TopologySnapshot topology_;
         OptimizerState state_;
+        CpuBenchmarkProfile benchmarkProfile_;
 
         DWORD foregroundProcessId_ = 0;
 
@@ -243,6 +292,10 @@ namespace Optimization
             ProcessInstance,
             PendingIsland,
             ProcessInstanceHash> pendingIslands_;
+        std::unordered_map<
+            ThreadInstance,
+            ThreadDecision,
+            ThreadInstanceHash> threadDecisions_;
         std::uint64_t foregroundStart100ns_ = 0;
         std::uint64_t lastFocusChangeTick_ = 0;
     };

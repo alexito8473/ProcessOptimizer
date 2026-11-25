@@ -235,7 +235,32 @@ namespace Service
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
+        // El orquestador publica su propio estado sin conocer el perfil.
+        // Conservamos el ultimo resultado de la prueba para que la UI no
+        // vea como vacio un perfil que ya fue medido y guardado.
+        const Optimization::BenchmarkState previousBenchmark =
+            state_.optimizer.benchmark;
+
         state_.optimizer = optimizer;
+        if (!state_.optimizer.benchmark.profile.HasData() &&
+            previousBenchmark.profile.HasData())
+        {
+            state_.optimizer.benchmark = previousBenchmark;
+        }
+
+        state_.hasOptimizer = true;
+        state_.changedMask = ChangeMask::Optimization;
+        ++state_.sequence;
+        state_.timestampMs = NowMs();
+        return ChangeMask::Optimization;
+    }
+
+    std::uint32_t MonitorState::SetBenchmark(
+        const Optimization::BenchmarkState& benchmark)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        state_.optimizer.benchmark = benchmark;
         state_.hasOptimizer = true;
         state_.changedMask = ChangeMask::Optimization;
         ++state_.sequence;
@@ -247,6 +272,22 @@ namespace Service
     {
         std::lock_guard<std::mutex> lock(mutex_);
         return state_;
+    }
+
+    std::shared_ptr<const IPC::State>
+    MonitorState::CachedSnapshot() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        if (!cachedState_ ||
+            cachedSequence_ != state_.sequence)
+        {
+            cachedState_ =
+                std::make_shared<const IPC::State>(state_);
+            cachedSequence_ = state_.sequence;
+        }
+
+        return cachedState_;
     }
 
     void MonitorState::Replace(const IPC::State& state)

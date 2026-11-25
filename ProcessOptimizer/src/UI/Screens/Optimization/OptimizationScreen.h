@@ -10,6 +10,7 @@ namespace UI::Screens::Optimization
     struct OptimizationCommand
     {
         bool changed = false;
+        bool startBenchmark = false;
         bool enabled = false;
         ::Optimization::OptimizerMode mode =
             ::Optimization::OptimizerMode::Off;

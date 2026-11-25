@@ -17,6 +17,12 @@ namespace Optimization
             TopologySnapshot& topology,
             const CpuSnapshot& snapshot);
 
+        // Actualiza solo frecuencia real, limites y estado de aparcado.
+        // Es una lectura barata (una llamada NtPowerInformation) y permite
+        // mostrar y usar frecuencias vivas sin reconstruir la topologia.
+        static void RefreshFrequencies(
+            TopologySnapshot& topology);
+
         static const TopologyProcessor* FindProcessor(
             const TopologySnapshot& topology,
             WORD group,

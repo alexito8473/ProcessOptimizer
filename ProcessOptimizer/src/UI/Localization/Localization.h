@@ -163,6 +163,17 @@ namespace UI::Localization
         Current,
         Target,
 
+        BenchmarkTitle,
+        BenchmarkButton,
+        BenchmarkRunning,
+        BenchmarkNoData,
+        BenchmarkProfile,
+        BenchmarkRank,
+        BenchmarkPeak,
+        BenchmarkAverage,
+        BenchmarkScore,
+        BenchmarkRequired,
+
         Count
     };
 

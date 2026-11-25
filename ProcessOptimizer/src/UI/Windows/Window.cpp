@@ -913,6 +913,16 @@ void Window::RenderRegionContent()
 
         SetAppSettings(settings);
 
+        if (command.startBenchmark)
+        {
+            IPC::PipeClient client;
+            client.StartBenchmark(4000);
+
+            scheduler_.Invalidate(
+                UI::Core::UiComponent::OptimizationPage);
+            RequestFrame();
+        }
+
         if (command.changed)
         {
             IPC::PipeClient client;
@@ -1544,8 +1554,10 @@ void Window::ServiceClientLoop()
                 lastRemoteSequence_ = remote.sequence;
             }
 
+            // El servicio publica CPU cada 1 s; sondear mas rapido solo
+            // aumentaba el coste de serializacion y conexiones del pipe.
             std::this_thread::sleep_for(
-                std::chrono::milliseconds(200));
+                std::chrono::milliseconds(400));
             continue;
         }
 

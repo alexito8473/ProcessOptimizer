@@ -494,10 +494,16 @@ namespace Optimization
             core.l3CacheId = processor.l3CacheId;
         }
 
-        ApplyProcessorPower(topology);
+        RefreshFrequencies(topology);
 
         topology.available = true;
         return topology;
+    }
+
+    void CpuTopology::RefreshFrequencies(
+        TopologySnapshot& topology)
+    {
+        ApplyProcessorPower(topology);
     }
 
     void CpuTopology::RefreshUsage(

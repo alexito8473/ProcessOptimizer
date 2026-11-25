@@ -13,6 +13,7 @@ namespace UI::Screens::Optimization
     namespace
     {
         using Text = UI::Localization::Text;
+        using ::Optimization::BenchmarkStatus;
         using ::Optimization::CoreClass;
         using ::Optimization::OptimizerMode;
         using ::Optimization::PlanStatus;
@@ -145,6 +146,10 @@ namespace UI::Screens::Optimization
                 "OptimizerControls", 125.0f, palette);
 
             const bool enabled = settings.optimizerEnabled;
+            const bool profileReady =
+                optimizer.benchmark.status ==
+                    BenchmarkStatus::Completed &&
+                optimizer.benchmark.profile.HasData();
 
             if (UI::Widgets::ToggleButton(
                     T(language,
@@ -154,13 +159,18 @@ namespace UI::Screens::Optimization
                     enabled,
                     palette))
             {
-                settings.optimizerEnabled = !enabled;
-                if (settings.optimizerEnabled &&
-                    settings.optimizerMode == 0)
+                if (enabled)
                 {
-                    settings.optimizerMode = 1;
+                    settings.optimizerEnabled = false;
+                    command.changed = true;
                 }
-                command.changed = true;
+                else if (profileReady)
+                {
+                    settings.optimizerEnabled = true;
+                    if (settings.optimizerMode == 0)
+                        settings.optimizerMode = 1;
+                    command.changed = true;
+                }
             }
 
             ImGui::SameLine();
@@ -180,8 +190,17 @@ namespace UI::Screens::Optimization
                     palette))
             {
                 settings.optimizerMode = selected;
-                settings.optimizerEnabled = selected != 0;
+                settings.optimizerEnabled =
+                    selected != 0 && profileReady;
                 command.changed = true;
+            }
+
+            if (!profileReady)
+            {
+                ImGui::Spacing();
+                UI::Widgets::MutedText(
+                    T(language, Text::BenchmarkRequired),
+                    palette);
             }
 
             ImGui::Spacing();
@@ -219,6 +238,175 @@ namespace UI::Screens::Optimization
                 UI::Widgets::MutedText(
                     T(language, Text::OptimizationSavedNote),
                     palette);
+            }
+
+            UI::Widgets::EndCard();
+        }
+
+        void RenderBenchmark(
+            const ::Optimization::OptimizerState& optimizer,
+            bool serviceConnected,
+            const UI::Theme::UiPalette& palette,
+            UI::Localization::Language language,
+            OptimizationCommand& command)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::BenchmarkTitle),
+                nullptr,
+                palette);
+
+            UI::Widgets::BeginCard(
+                "OptimizerBenchmark", 0.0f, palette);
+
+            const ::Optimization::BenchmarkState& benchmark =
+                optimizer.benchmark;
+
+            const bool running =
+                benchmark.status == BenchmarkStatus::Running;
+
+            if (running)
+            {
+                ImGui::ProgressBar(
+                    static_cast<float>(
+                        benchmark.progressPercent) / 100.0f,
+                    ImVec2(-1.0f, 0.0f),
+                    T(language, Text::BenchmarkRunning));
+            }
+            else if (!serviceConnected)
+            {
+                UI::Widgets::Badge(
+                    T(language,
+                      Text::OptimizationServiceRequired),
+                    palette.Warning,
+                    palette);
+            }
+            else if (UI::Widgets::SecondaryButton(
+                         T(language, Text::BenchmarkButton),
+                         palette))
+            {
+                command.startBenchmark = true;
+            }
+
+            if (!benchmark.statusText.empty())
+            {
+                ImGui::Spacing();
+                UI::Widgets::MutedText(
+                    benchmark.statusText.c_str(), palette);
+            }
+
+            if (!benchmark.profile.HasData())
+            {
+                UI::Widgets::MutedText(
+                    T(language, Text::BenchmarkNoData),
+                    palette);
+                UI::Widgets::EndCard();
+                return;
+            }
+
+            ImGui::Spacing();
+
+            std::uint64_t ageSeconds = 0;
+            if (benchmark.profile.createdMs != 0)
+            {
+                const std::uint64_t now = GetTickCount64();
+                ageSeconds =
+                    now >= benchmark.profile.createdMs
+                        ? (now - benchmark.profile.createdMs) /
+                              1000
+                        : 0;
+            }
+
+            UI::Widgets::Badge(
+                T(language, Text::BenchmarkProfile),
+                palette.Success,
+                palette);
+            ImGui::SameLine();
+            ImGui::Text(
+                "%llu s",
+                static_cast<unsigned long long>(ageSeconds));
+
+            std::vector<
+                const ::Optimization::ProcessorBenchmark*> ordered;
+            ordered.reserve(
+                benchmark.profile.processors.size());
+
+            for (const ::Optimization::ProcessorBenchmark& entry :
+                 benchmark.profile.processors)
+            {
+                ordered.push_back(&entry);
+            }
+
+            std::sort(
+                ordered.begin(), ordered.end(),
+                [](const auto* left, const auto* right)
+                {
+                    if (left->rank != right->rank)
+                        return left->rank < right->rank;
+
+                    if (left->group != right->group)
+                        return left->group < right->group;
+
+                    return left->logicalIndex <
+                           right->logicalIndex;
+                });
+
+            constexpr ImGuiTableFlags flags =
+                ImGuiTableFlags_Borders |
+                ImGuiTableFlags_RowBg;
+
+            if (ImGui::BeginTable(
+                    "OptimizerBenchmarkTable", 6, flags))
+            {
+                ImGui::TableSetupColumn(
+                    T(language, Text::BenchmarkRank),
+                    ImGuiTableColumnFlags_WidthFixed, 52.0f);
+                ImGui::TableSetupColumn(
+                    "CPU",
+                    ImGuiTableColumnFlags_WidthFixed, 72.0f);
+                ImGui::TableSetupColumn(
+                    T(language, Text::PhysicalCores),
+                    ImGuiTableColumnFlags_WidthFixed, 78.0f);
+                ImGui::TableSetupColumn(
+                    T(language, Text::BenchmarkPeak),
+                    ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                ImGui::TableSetupColumn(
+                    T(language, Text::BenchmarkAverage),
+                    ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                ImGui::TableSetupColumn(
+                    T(language, Text::BenchmarkScore),
+                    ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableHeadersRow();
+
+                for (const auto* entry : ordered)
+                {
+                    ImGui::TableNextRow();
+
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text("%u", entry->rank);
+
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text(
+                        "G%u:L%u",
+                        entry->group, entry->logicalIndex);
+
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text(
+                        "%u", entry->physicalCoreIndex);
+
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::Text(
+                        "%.0f", entry->peakMHz);
+
+                    ImGui::TableSetColumnIndex(4);
+                    ImGui::Text(
+                        "%.0f", entry->averageMHz);
+
+                    ImGui::TableSetColumnIndex(5);
+                    ImGui::Text(
+                        "%.1f", entry->score);
+                }
+
+                ImGui::EndTable();
             }
 
             UI::Widgets::EndCard();
@@ -705,6 +893,13 @@ namespace UI::Screens::Optimization
             language,
             optimizer,
             serviceConnected,
+            command);
+
+        RenderBenchmark(
+            optimizer,
+            serviceConnected,
+            palette,
+            language,
             command);
 
         RenderTopology(

@@ -4,10 +4,13 @@
 #include "../Monitoring/SystemMonitor/SystemMonitor.h"
 #include "../Optimization/CpuTopology.h"
 #include "../Optimization/CpuOrchestrator.h"
+#include "../Optimization/CpuBenchmark.h"
 #include "MonitorState.h"
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
+#include <mutex>
 
 namespace Service
 {
@@ -33,12 +36,20 @@ namespace Service
         std::shared_ptr<SystemMonitor> monitor_;
         std::unique_ptr<IPC::PipeServer> pipe_;
         std::unique_ptr<Optimization::CpuOrchestrator> orchestrator_;
+        std::unique_ptr<Optimization::CpuBenchmark> benchmark_;
         MonitorState state_;
 
         Optimization::TopologySnapshot topology_;
         Optimization::OptimizerState optimizer_;
 
         bool subscribed_ = false;
+        std::atomic<bool> benchmarkResume_{ false };
+        Optimization::OptimizerMode previousModeBeforeBenchmark_ =
+            Optimization::OptimizerMode::Off;
+        std::mutex optimizerRequestMutex_;
+        bool requestedOptimizerEnabled_ = false;
+        Optimization::OptimizerMode requestedOptimizerMode_ =
+            Optimization::OptimizerMode::Off;
         std::size_t cpuSubscription_ = 0;
         std::size_t memorySubscription_ = 0;
         std::size_t gpuSubscription_ = 0;

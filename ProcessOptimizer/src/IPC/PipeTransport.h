@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_set>
@@ -14,7 +15,8 @@ namespace IPC
     class PipeServer
     {
     public:
-        using StateProvider = std::function<State()>;
+        using StateProvider =
+            std::function<std::shared_ptr<const State>()>;
         using CommandHandler = std::function<bool(
             Request request,
             const std::vector<std::uint8_t>& payload)>;
@@ -47,6 +49,13 @@ namespace IPC
         std::unordered_set<HANDLE> clients_;
         std::atomic<int> activeClients_{0};
 
+        // Serializar el estado completo cuesta mas que leerlo. Solo se
+        // regenera cuando cambio la secuencia, aunque haya varias UI
+        // sondeando el pipe.
+        mutable std::mutex stateCacheMutex_;
+        std::uint64_t cachedSequence_ = 0;
+        std::vector<std::uint8_t> cachedPayload_;
+
         std::thread acceptThread_;
     };
 
@@ -59,6 +68,8 @@ namespace IPC
             bool enabled,
             Optimization::OptimizerMode mode);
         bool SetForegroundProcess(DWORD processId);
+        bool StartBenchmark(
+            std::uint32_t durationMs = 4000);
 
     private:
         bool RoundTrip(

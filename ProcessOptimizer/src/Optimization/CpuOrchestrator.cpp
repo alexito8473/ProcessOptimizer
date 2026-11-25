@@ -21,11 +21,16 @@ namespace Optimization
         constexpr std::uint64_t FocusFreezeTicks = 3;
         constexpr std::uint8_t IslandConfirmTicks = 2;
 
+        // Solo migrar si el nucleo nuevo es claramente mejor. Un cambio
+        // pequeño no compensa el coste de migrar cache y perturbar el
+        // frame pacing.
+        constexpr double CoreMoveThreshold = 18.0;
+
         std::uint64_t FileTime100ns(const FILETIME& value)
         {
             return
                 (static_cast<std::uint64_t>(
-                    value.dwHighDateTime) << 32) |
+                     value.dwHighDateTime) << 32) |
                 static_cast<std::uint64_t>(
                     value.dwLowDateTime);
         }
@@ -41,8 +46,78 @@ namespace Optimization
         std::uint16_t IslandOf(const TopologyProcessor& processor)
         {
             return processor.l3CacheId != 0
-                ? processor.l3CacheId
-                : processor.l2CacheId;
+                       ? processor.l3CacheId
+                       : processor.l2CacheId;
+        }
+
+        std::uint32_t ProcessorKey(WORD group, BYTE logicalIndex)
+        {
+            return
+                (static_cast<std::uint32_t>(group) << 8) |
+                static_cast<std::uint32_t>(logicalIndex);
+        }
+
+        CpuSetMap QueryCpuSetMap()
+        {
+            CpuSetMap result;
+
+            ULONG size = 0;
+            if (!GetSystemCpuSetInformation(
+                    nullptr, 0, &size, nullptr, 0) &&
+                GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+            {
+                return result;
+            }
+
+            if (size == 0)
+                return result;
+
+            std::vector<BYTE> buffer(size);
+            ULONG returned = 0;
+            if (!GetSystemCpuSetInformation(
+                    reinterpret_cast<PSYSTEM_CPU_SET_INFORMATION>(
+                        buffer.data()),
+                    size,
+                    &returned,
+                    nullptr,
+                    0))
+            {
+                return result;
+            }
+
+            BYTE* current = buffer.data();
+            BYTE* end = buffer.data() + returned;
+
+            while (current < end)
+            {
+                auto* info =
+                    reinterpret_cast<PSYSTEM_CPU_SET_INFORMATION>(
+                        current);
+
+                if (info->Size == 0 ||
+                    current + info->Size > end)
+                {
+                    break;
+                }
+
+                if (info->Type == CpuSetInformation)
+                {
+                    const auto& set = info->CpuSet;
+
+                    // Un CPU Set es una preferencia blanda: Windows
+                    // sigue aplicando gestion de energia y puede ignorar
+                    // la sugerencia si no conviene.
+                    result.idByProcessor[
+                        ProcessorKey(
+                            set.Group,
+                            set.LogicalProcessorIndex)] = set.Id;
+                }
+
+                current += info->Size;
+            }
+
+            result.available = !result.idByProcessor.empty();
+            return result;
         }
 
         const wchar_t* CriticalNames[] = {
@@ -118,8 +193,8 @@ namespace Optimization
             std::lock_guard<std::mutex> lock(mutex_);
             topology_ = topology;
             state_.status = topology.available
-                ? "Topologia detectada"
-                : "Topologia no disponible";
+                                ? "Topologia detectada"
+                                : "Topologia no disponible";
         }
         Publish();
     }
@@ -175,15 +250,11 @@ namespace Optimization
             disable = mode == OptimizerMode::Off;
 
             if (disable)
-            {
                 state_.status = "Optimizacion desactivada";
-            }
             else
-            {
                 state_.status = mode == OptimizerMode::Gaming
-                    ? "Perfil Gaming"
-                    : "Perfil Multitarea";
-            }
+                                    ? "Perfil Gaming"
+                                    : "Perfil Multitarea";
         }
 
         if (disable)
@@ -218,6 +289,34 @@ namespace Optimization
     {
         std::lock_guard<std::mutex> lock(mutex_);
         return state_;
+    }
+
+    void CpuOrchestrator::SetBenchmarkProfile(
+        const CpuBenchmarkProfile& profile)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            benchmarkProfile_ = profile;
+        }
+
+        Publish();
+    }
+
+    bool CpuOrchestrator::HasBenchmarkProfile() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return benchmarkProfile_.HasData();
+    }
+
+    void CpuOrchestrator::SetStatusMessage(
+        const std::string& status)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            state_.status = status;
+        }
+
+        Publish();
     }
 
     void CpuOrchestrator::WorkerLoop()
@@ -273,7 +372,8 @@ namespace Optimization
         FILETIME user{};
 
         const bool ok = GetProcessTimes(
-            process, &creation, &exitTime, &kernel, &user) != FALSE;
+                            process, &creation, &exitTime,
+                            &kernel, &user) != FALSE;
 
         CloseHandle(process);
 
@@ -302,7 +402,8 @@ namespace Optimization
         FILETIME user{};
 
         const bool ok = GetThreadTimes(
-            thread, &creation, &exitTime, &kernel, &user) != FALSE;
+                            thread, &creation, &exitTime,
+                            &kernel, &user) != FALSE;
 
         CloseHandle(thread);
 
@@ -310,6 +411,32 @@ namespace Optimization
             return false;
 
         startTime100ns = FileTime100ns(creation);
+        return true;
+    }
+
+    bool CpuOrchestrator::QueryThreadCpuSets(
+        HANDLE thread,
+        std::vector<ULONG>& ids) const
+    {
+        ULONG needed = 0;
+        if (!GetThreadSelectedCpuSets(
+                thread, nullptr, 0, &needed))
+        {
+            return false;
+        }
+
+        ids.assign(needed, 0);
+        if (needed == 0)
+            return true;
+
+        if (!GetThreadSelectedCpuSets(
+                thread, ids.data(), needed, &needed))
+        {
+            ids.clear();
+            return false;
+        }
+
+        ids.resize(needed);
         return true;
     }
 
@@ -336,8 +463,6 @@ namespace Optimization
         if (!ProcessIdToSessionId(processId, &sessionId))
             return false;
 
-        // El servicio corre en la sesion 0: no debe orquestar procesos
-        // del sistema ni de otras sesiones sin interaccion del usuario.
         return sessionId != 0;
     }
 
@@ -349,12 +474,11 @@ namespace Optimization
     {
         const ProcessInstance key{ processId, startTime100ns };
 
+        std::lock_guard<std::mutex> lock(mutex_);
+
         const auto it = originalProcesses_.find(key);
-        if (it != originalProcesses_.end() &&
-            it->second.startTime100ns == startTime100ns)
-        {
+        if (it != originalProcesses_.end())
             return it->second;
-        }
 
         OriginalProcessState original;
         original.startTime100ns = startTime100ns;
@@ -384,12 +508,6 @@ namespace Optimization
             threadId,
             threadStart100ns };
 
-        const auto it = originalThreads_.find(key);
-        if (it != originalThreads_.end())
-        {
-            return it->second;
-        }
-
         OriginalThreadState original;
         original.startTime100ns = processStart100ns;
 
@@ -415,8 +533,151 @@ namespace Optimization
             original.hasPriority = true;
         }
 
+        std::vector<ULONG> cpuSetIds;
+        if (QueryThreadCpuSets(thread, cpuSetIds) &&
+            !cpuSetIds.empty())
+        {
+            original.cpuSetIds = std::move(cpuSetIds);
+            original.hasCpuSets = true;
+        }
+
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        const auto it = originalThreads_.find(key);
+        if (it != originalThreads_.end())
+            return it->second;
+
         originalThreads_[key] = original;
         return original;
+    }
+
+    bool CpuOrchestrator::RestoreThread(
+        const ThreadInstance& threadInstance,
+        const OriginalThreadState& original)
+    {
+        std::uint64_t processStart = 0;
+        if (!GetProcessStart(
+                threadInstance.processId, processStart) ||
+            processStart !=
+                threadInstance.processStart100ns)
+        {
+            return false;
+        }
+
+        std::uint64_t threadStart = 0;
+        if (!GetThreadStart(
+                threadInstance.threadId, threadStart) ||
+            threadStart !=
+                threadInstance.threadStart100ns)
+        {
+            return false;
+        }
+
+        HANDLE thread = OpenThread(
+            THREAD_QUERY_LIMITED_INFORMATION |
+                THREAD_SET_INFORMATION,
+            FALSE,
+            threadInstance.threadId);
+
+        if (thread == nullptr)
+            return false;
+
+        bool ok = true;
+
+        // Si el hilo tenia un CPU Set explicito se recupera. Si no,
+        // se limpia el que puso el orquestador para volver al default
+        // del proceso.
+        std::vector<ULONG> currentIds;
+        const bool queried = QueryThreadCpuSets(thread, currentIds);
+
+        if (original.hasCpuSets ||
+            (queried && !currentIds.empty()))
+        {
+            std::vector<ULONG> idsToRestore =
+                original.cpuSetIds;
+
+            ULONG* ids = original.hasCpuSets
+                             ? idsToRestore.data()
+                             : nullptr;
+            const ULONG count =
+                original.hasCpuSets
+                    ? static_cast<ULONG>(
+                          idsToRestore.size())
+                    : 0;
+
+            if (!SetThreadSelectedCpuSets(
+                    thread, ids, count))
+            {
+                ok = false;
+            }
+        }
+
+        // Solo se restaura el ideal processor si esta version tuvo que
+        // usarlo como alternativa cuando no habia CPU Sets.
+        if (ok && original.idealChanged && original.hasIdeal)
+        {
+            PROCESSOR_NUMBER number{};
+            number.Group = original.group;
+            number.Number = static_cast<BYTE>(
+                std::min<DWORD>(
+                    original.idealProcessor, 63));
+
+            if (!SetThreadIdealProcessorEx(
+                    thread, &number, nullptr))
+            {
+                ok = false;
+            }
+        }
+
+        CloseHandle(thread);
+        return ok;
+    }
+
+    bool CpuOrchestrator::RestoreProcess(
+        const ProcessInstance& processInstance,
+        const OriginalProcessState&)
+    {
+        // Esta version no cambia prioridades de proceso. Solo valida que
+        // la instancia siga viva para no dejar estado pendiente.
+        std::uint64_t currentStart = 0;
+        return GetProcessStart(
+                   processInstance.processId, currentStart) &&
+               currentStart ==
+                   processInstance.startTime100ns;
+    }
+
+    void CpuOrchestrator::RestoreAll()
+    {
+        std::unordered_map<
+            ThreadInstance,
+            OriginalThreadState,
+            ThreadInstanceHash> threads;
+        std::unordered_map<
+            ProcessInstance,
+            OriginalProcessState,
+            ProcessInstanceHash> processes;
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            threads = originalThreads_;
+            processes = originalProcesses_;
+            originalThreads_.clear();
+            originalProcesses_.clear();
+            threadLastChange_.clear();
+            processIslands_.clear();
+            pendingIslands_.clear();
+            threadDecisions_.clear();
+
+            state_.revertedChanges +=
+                static_cast<std::uint32_t>(
+                    threads.size() + processes.size());
+        }
+
+        for (const auto& entry : threads)
+            RestoreThread(entry.first, entry.second);
+
+        for (const auto& entry : processes)
+            RestoreProcess(entry.first, entry.second);
     }
 
     std::uint16_t CpuOrchestrator::ChooseIsland(
@@ -521,8 +782,6 @@ namespace Optimization
                     std::max<std::size_t>(
                         previous.count, 1));
 
-            // Histéresis: conservar la isla evita migraciones de cache
-            // si la diferencia de carga es pequena.
             if (previousAverage <= bestAverage + 12.0)
                 return previousIsland;
         }
@@ -530,365 +789,264 @@ namespace Optimization
         return best;
     }
 
-    bool CpuOrchestrator::BuildTarget(
+    double CpuOrchestrator::CoreScore(
         const TopologySnapshot& topology,
+        std::size_t coreIndex,
         std::uint16_t island,
         WORD group,
         std::uint64_t originalAffinity,
         bool targetProcess,
-        std::vector<std::size_t>& chosenProcessors,
-        std::uint64_t& targetAffinity,
-        DWORD& idealProcessor) const
+        double bestCeiling,
+        std::size_t preferredCore) const
     {
-        bool hasPerformance = false;
-        if (targetProcess &&
-            topology.kind == TopologyKind::Hybrid)
+        const TopologyCore* core = nullptr;
+        for (const TopologyCore& candidate : topology.cores)
         {
-            for (const TopologyProcessor& processor :
-                 topology.processors)
+            if (candidate.coreIndex == coreIndex)
             {
-                if (processor.coreClass ==
-                    CoreClass::Performance)
-                {
-                    hasPerformance = true;
-                    break;
-                }
+                core = &candidate;
+                break;
             }
         }
 
-        auto matches = [&](std::size_t index, bool useIsland,
-                           bool useClass)
+        if (core == nullptr || core->logicalIndices.empty())
+            return 1e100;
+
+        double load = 0.0;
+        double ceiling = 0.0;
+        bool any = false;
+        bool parked = true;
+        bool classMismatch = false;
+
+        for (std::uint32_t index : core->logicalIndices)
         {
+            if (index >= topology.processors.size())
+                continue;
+
             const TopologyProcessor& processor =
                 topology.processors[index];
 
             if (processor.group != group)
-                return false;
+                continue;
 
             if (originalAffinity != 0 &&
                 !HasBit(
                     originalAffinity,
                     processor.logicalIndex))
             {
-                return false;
+                continue;
             }
 
-            if (useIsland &&
-                island != 0 &&
+            if (island != 0 &&
                 IslandOf(processor) != island)
             {
-                return false;
+                continue;
             }
 
-            if (useClass && hasPerformance &&
-                processor.coreClass !=
-                    CoreClass::Performance)
+            if (targetProcess &&
+                topology.kind == TopologyKind::Hybrid &&
+                processor.coreClass ==
+                    CoreClass::Efficiency)
             {
-                return false;
+                classMismatch = true;
             }
 
-            return true;
-        };
+            load += (std::max)(
+                0.0, processor.usagePercent);
 
-        std::vector<std::size_t> candidates;
+            const double logicalCeiling =
+                !processor.frequencyAvailable ||
+                        processor.parked
+                    ? 0.0
+                    : (processor.maxMHz > 0.0
+                           ? processor.maxMHz
+                           : processor.mhzLimitMHz);
 
-        for (std::size_t i = 0;
-             i < topology.processors.size();
-             ++i)
-        {
-            if (matches(i, true, true))
-                candidates.push_back(i);
+            ceiling = (std::max)(ceiling, logicalCeiling);
+            parked = parked && processor.parked;
+            any = true;
         }
 
-        if (candidates.empty())
+        if (!any)
+            return 1e100;
+
+        double score = load * 2.0;
+
+        if (ceiling > 0.0 && bestCeiling > 0.0)
         {
-            for (std::size_t i = 0;
-                 i < topology.processors.size();
-                 ++i)
-            {
-                if (matches(i, true, false))
-                    candidates.push_back(i);
-            }
+            score +=
+                (1.0 - ceiling / bestCeiling) * 25.0;
+        }
+        else
+        {
+            score += 25.0;
         }
 
-        if (candidates.empty())
+        if (parked)
+            score += 1000.0;
+
+        if (classMismatch)
+            score += 60.0;
+
+        if (preferredCore == coreIndex)
+            score -= 15.0;
+
+        // El perfil de la prueba bajo demanda es una medida real, no una
+        // suposicion de P/E. Solo desempata entre nucleos del mismo grupo
+        // y nunca sustituye a la carga observada en tiempo real.
+        double measuredScore = -1.0;
         {
-            for (std::size_t i = 0;
-                 i < topology.processors.size();
-                 ++i)
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            for (const ProcessorBenchmark& benchmark :
+                 benchmarkProfile_.processors)
             {
-                if (matches(i, false, false))
-                    candidates.push_back(i);
-            }
-        }
-
-        if (candidates.empty())
-            return false;
-
-        const auto frequencyCeiling =
-            [&](std::size_t index)
-        {
-            const TopologyProcessor& processor =
-                topology.processors[index];
-
-            if (!processor.frequencyAvailable ||
-                processor.parked)
-            {
-                return 0.0;
-            }
-
-            return processor.maxMHz > 0.0
-                       ? processor.maxMHz
-                       : processor.mhzLimitMHz;
-        };
-
-        double bestCeiling = 0.0;
-        for (std::size_t index : candidates)
-            bestCeiling = (std::max)(
-                bestCeiling, frequencyCeiling(index));
-
-        const auto score =
-            [&](std::size_t index)
-        {
-            const TopologyProcessor& processor =
-                topology.processors[index];
-
-            double siblingUsage = 0.0;
-            std::size_t siblingCount = 0;
-
-            for (const TopologyCore& core : topology.cores)
-            {
-                if (core.coreIndex !=
-                    processor.physicalCoreIndex)
+                if (benchmark.group != group ||
+                    benchmark.physicalCoreIndex != coreIndex)
                 {
                     continue;
                 }
 
-                for (std::uint32_t sibling :
-                     core.logicalIndices)
-                {
-                    if (sibling == index ||
-                        sibling >=
-                            topology.processors.size())
-                    {
-                        continue;
-                    }
+                measuredScore =
+                    (std::max)(measuredScore, benchmark.score);
+            }
+        }
 
-                    siblingUsage += (std::max)(
-                        0.0,
-                        topology.processors[sibling]
-                            .usagePercent);
-                    ++siblingCount;
-                }
+        if (measuredScore > 0.0)
+            score -= measuredScore * 0.35;
+
+        return score;
+    }
+
+    bool CpuOrchestrator::BuildCoreRanking(
+        const TopologySnapshot& topology,
+        std::uint16_t island,
+        WORD group,
+        std::uint64_t originalAffinity,
+        bool targetProcess,
+        std::size_t preferredCore,
+        std::vector<std::pair<double, std::size_t>>& ranking) const
+    {
+        double bestCeiling = 0.0;
+
+        for (const TopologyProcessor& processor :
+             topology.processors)
+        {
+            if (processor.group != group)
+                continue;
+
+            if (originalAffinity != 0 &&
+                !HasBit(
+                    originalAffinity,
+                    processor.logicalIndex))
+            {
+                continue;
             }
 
-            // Un hermano SMT ocupado es peor que un nucleo fisico libre.
-            const double smtPenalty =
-                siblingCount > 0 && siblingUsage > 5.0
-                    ? 12.0
-                    : 0.0;
+            if (island != 0 &&
+                IslandOf(processor) != island)
+            {
+                continue;
+            }
 
-            const double ceiling = frequencyCeiling(index);
-            const double frequencyPenalty =
-                bestCeiling > 0.0 && ceiling > 0.0
-                    ? (1.0 - ceiling / bestCeiling) * 20.0
-                    : 0.0;
+            if (targetProcess &&
+                topology.kind == TopologyKind::Hybrid &&
+                processor.coreClass ==
+                    CoreClass::Efficiency)
+            {
+                continue;
+            }
 
-            const double parkedPenalty =
-                processor.parked ? 1000.0 : 0.0;
+            if (!processor.frequencyAvailable ||
+                processor.parked)
+            {
+                continue;
+            }
 
-            return processor.usagePercent * 2.0 +
-                   siblingUsage * 0.7 +
-                   smtPenalty +
-                   frequencyPenalty +
-                   parkedPenalty;
-        };
+            bestCeiling = (std::max)(
+                bestCeiling,
+                processor.maxMHz > 0.0
+                    ? processor.maxMHz
+                    : processor.mhzLimitMHz);
+        }
+
+        ranking.clear();
+
+        for (const TopologyCore& core : topology.cores)
+        {
+            const double score = CoreScore(
+                topology,
+                core.coreIndex,
+                island,
+                group,
+                originalAffinity,
+                targetProcess,
+                bestCeiling,
+                preferredCore);
+
+            if (score >= 1e100)
+                continue;
+
+            ranking.emplace_back(score, core.coreIndex);
+        }
 
         std::sort(
-            candidates.begin(), candidates.end(),
-            [&](std::size_t left, std::size_t right)
+            ranking.begin(), ranking.end(),
+            [](const std::pair<double, std::size_t>& left,
+               const std::pair<double, std::size_t>& right)
             {
-                const double leftScore = score(left);
-                const double rightScore = score(right);
+                if (left.first == right.first)
+                    return left.second < right.second;
 
-                if (leftScore == rightScore)
-                {
-                    return topology.processors[left]
-                               .logicalIndex <
-                           topology.processors[right]
-                               .logicalIndex;
-                }
-
-                return leftScore < rightScore;
+                return left.first < right.first;
             });
 
-        // Una sola pista de nucleo ideal por hilo: menos rescheduling.
-        const std::size_t limit = 1;
-
-        targetAffinity = 0;
-        chosenProcessors.clear();
-
-        for (std::size_t i = 0; i < limit; ++i)
-        {
-            const std::size_t index = candidates[i];
-            const TopologyProcessor& processor =
-                topology.processors[index];
-
-            targetAffinity |=
-                std::uint64_t{ 1 } <<
-                processor.logicalIndex;
-            chosenProcessors.push_back(index);
-        }
-
-        const std::size_t best = candidates.front();
-        idealProcessor =
-            topology.processors[best].logicalIndex;
-        return true;
+        return !ranking.empty();
     }
 
-    bool CpuOrchestrator::RestoreThread(
-        const ThreadInstance& threadInstance,
-        const OriginalThreadState& original)
+    std::vector<ULONG> CpuOrchestrator::CpuSetIdsForCore(
+        const TopologySnapshot& topology,
+        std::size_t coreIndex,
+        WORD group,
+        std::uint64_t affinity,
+        const CpuSetMap& cpuSets) const
     {
-        std::uint64_t processStart = 0;
-        if (!GetProcessStart(
-                threadInstance.processId, processStart) ||
-            processStart !=
-                threadInstance.processStart100ns)
+        std::vector<ULONG> ids;
+
+        if (!cpuSets.available || coreIndex == NoCore)
+            return ids;
+
+        for (const TopologyProcessor& processor :
+             topology.processors)
         {
-            return false;
-        }
-
-        std::uint64_t threadStart = 0;
-        if (!GetThreadStart(
-                threadInstance.threadId, threadStart) ||
-            threadStart !=
-                threadInstance.threadStart100ns)
-        {
-            return false;
-        }
-
-        HANDLE thread = OpenThread(
-            THREAD_QUERY_LIMITED_INFORMATION |
-                THREAD_SET_INFORMATION,
-            FALSE,
-            threadInstance.threadId);
-
-        if (thread == nullptr)
-            return false;
-
-        bool ok = true;
-
-        if (original.hasAffinity)
-        {
-            GROUP_AFFINITY affinity{};
-            affinity.Group = original.group;
-            affinity.Mask = original.affinity;
-
-            if (!SetThreadGroupAffinity(
-                    thread, &affinity, nullptr))
+            if (processor.physicalCoreIndex != coreIndex ||
+                processor.group != group)
             {
-                ok = false;
+                continue;
             }
-        }
 
-        if (ok && original.hasIdeal)
-        {
-            PROCESSOR_NUMBER number{};
-            number.Group = original.group;
-            number.Number = static_cast<BYTE>(
-                std::min<DWORD>(
-                    original.idealProcessor, 63));
-
-            if (!SetThreadIdealProcessorEx(
-                    thread, &number, nullptr))
+            if (affinity != 0 &&
+                !HasBit(affinity, processor.logicalIndex))
             {
-                ok = false;
+                continue;
             }
+
+            const auto it = cpuSets.idByProcessor.find(
+                ProcessorKey(
+                    processor.group,
+                    processor.logicalIndex));
+
+            if (it == cpuSets.idByProcessor.end())
+                continue;
+
+            ids.push_back(it->second);
         }
 
-        if (ok && original.hasPriority)
-        {
-            if (!SetThreadPriority(
-                    thread, original.priority))
-            {
-                ok = false;
-            }
-        }
+        std::sort(ids.begin(), ids.end());
+        ids.erase(
+            std::unique(ids.begin(), ids.end()), ids.end());
 
-        CloseHandle(thread);
-        return ok;
-    }
-
-    bool CpuOrchestrator::RestoreProcess(
-        const ProcessInstance& processInstance,
-        const OriginalProcessState& original)
-    {
-        std::uint64_t currentStart = 0;
-        if (!GetProcessStart(
-                processInstance.processId, currentStart) ||
-            currentStart !=
-                processInstance.startTime100ns)
-        {
-            return false;
-        }
-
-        HANDLE process = OpenProcess(
-            PROCESS_SET_INFORMATION,
-            FALSE,
-            processInstance.processId);
-
-        if (process == nullptr)
-            return false;
-
-        bool ok = true;
-        if (original.hasPriority)
-        {
-            ok = SetPriorityClass(
-                     process,
-                     static_cast<DWORD>(
-                         original.priority)) != FALSE;
-        }
-
-        CloseHandle(process);
-        return ok;
-    }
-
-    void CpuOrchestrator::RestoreAll()
-    {
-        std::unordered_map<
-            ThreadInstance,
-            OriginalThreadState,
-            ThreadInstanceHash> threads;
-        std::unordered_map<
-            ProcessInstance,
-            OriginalProcessState,
-            ProcessInstanceHash> processes;
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            threads = originalThreads_;
-            processes = originalProcesses_;
-            originalThreads_.clear();
-            originalProcesses_.clear();
-            threadLastChange_.clear();
-            processIslands_.clear();
-            pendingIslands_.clear();
-
-            state_.revertedChanges +=
-                static_cast<std::uint32_t>(
-                    threads.size() + processes.size());
-        }
-
-        for (const auto& entry : threads)
-        {
-            RestoreThread(entry.first, entry.second);
-        }
-
-        for (const auto& entry : processes)
-        {
-            RestoreProcess(entry.first, entry.second);
-        }
+        return ids;
     }
 
     void CpuOrchestrator::BuildPlanAndApply()
@@ -918,19 +1076,19 @@ namespace Optimization
         {
             std::lock_guard<std::mutex> lock(mutex_);
             state_.status =
-                "Sin topologia: solo equilibrio de carga";
+                "Sin topologia: Windows decide";
             state_.running = false;
             return;
         }
 
         CpuTopology::RefreshUsage(topology, cpu);
 
-        // Tras un cambio de foco no conviene mover hilos mientras el juego
-        // esta calentando cache: eso incrementa los picos de frame time.
         const bool focusFrozen =
             currentTick >= lastFocusChange &&
             currentTick - lastFocusChange <
                 FocusFreezeTicks;
+
+        const CpuSetMap cpuSets = QueryCpuSetMap();
 
         std::vector<Candidate> candidates;
         std::unordered_set<DWORD> candidatePids;
@@ -985,7 +1143,6 @@ namespace Optimization
             candidate.gpuUsagePercent =
                 process.gpuUsagePercent;
             candidate.foreground = foreground;
-            candidate.critical = false;
 
             candidates.push_back(candidate);
             candidatePids.insert(process.processId);
@@ -997,6 +1154,7 @@ namespace Optimization
             {
                 if (left.foreground != right.foreground)
                     return left.foreground;
+
                 return left.cpuUsagePercent >
                        right.cpuUsagePercent;
             });
@@ -1005,6 +1163,8 @@ namespace Optimization
             candidates.resize(MaxProcesses);
 
         DWORD targetPid = 0;
+        std::uint64_t targetStart = 0;
+
         if (mode == OptimizerMode::Gaming)
         {
             for (const Candidate& candidate : candidates)
@@ -1016,6 +1176,8 @@ namespace Optimization
                     candidate.gpuUsagePercent >= 1.5)
                 {
                     targetPid = candidate.processId;
+                    targetStart =
+                        candidate.startTime100ns;
                 }
 
                 break;
@@ -1025,21 +1187,34 @@ namespace Optimization
         const std::uint16_t targetIsland =
             targetPid != 0
                 ? ChooseIsland(
-                    0, true, false, 0,
-                    0xFFFF, 0, topology.processors)
+                      0, true, false, 0,
+                      0xFFFF, 0, topology.processors)
                 : 0;
+
+        // En Gaming solo se mira el proceso con foco. Los hilos del
+        // resto se dejan al planificador de Windows: moverlos era una
+        // de las causas de caidas de frames.
+        std::unordered_set<DWORD> sampledPids;
+        if (mode == OptimizerMode::Gaming)
+        {
+            if (targetPid != 0)
+                sampledPids.insert(targetPid);
+        }
+        else
+        {
+            for (DWORD pid : candidatePids)
+                sampledPids.insert(pid);
+        }
 
         std::vector<ThreadLoad> loads =
             threadMonitor_.Sample(
-                candidatePids, topology.processors.size());
+                sampledPids, topology.processors.size());
 
         std::unordered_map<DWORD, std::vector<ThreadLoad>>
             threadsByProcess;
 
         for (ThreadLoad& load : loads)
-        {
             threadsByProcess[load.processId].push_back(load);
-        }
 
         for (auto& entry : threadsByProcess)
         {
@@ -1067,15 +1242,27 @@ namespace Optimization
         output.lastUpdateMs = static_cast<std::uint64_t>(
             GetTickCount64());
 
-        output.status =
-            targetPid != 0
-                ? "Gaming: proceso con foco en nucleos rapidos"
-                : (mode == OptimizerMode::Gaming
-                       ? "Gaming: reparto normal"
-                       : "Multitarea: reparto por cache");
+        if (focusFrozen)
+        {
+            output.status =
+                "Estabilizando tras cambio de foco";
+        }
+        else if (mode == OptimizerMode::Gaming)
+        {
+            output.status =
+                targetPid != 0
+                    ? "Gaming: reparto suave por nucleo fisico"
+                    : "Gaming: sin carga, Windows decide";
+        }
+        else
+        {
+            output.status =
+                "Multitarea: reparto suave por nucleo fisico";
+        }
 
         std::size_t bestFrequencyIndex = 0;
         double bestFrequencyCeiling = 0.0;
+
         for (std::size_t i = 0;
              i < topology.processors.size();
              ++i)
@@ -1158,6 +1345,7 @@ namespace Optimization
             ThreadInstance, ThreadInstanceHash> activeThreads;
         std::unordered_set<
             ProcessInstance, ProcessInstanceHash> activeProcesses;
+        std::unordered_set<std::size_t> usedCores;
 
         for (const Candidate& candidate : candidates)
         {
@@ -1167,162 +1355,30 @@ namespace Optimization
             const ProcessInstance instance{
                 candidate.processId, startTime };
 
-            activeProcesses.insert(instance);
+            const bool isTarget =
+                candidate.processId == targetPid &&
+                startTime == targetStart;
 
             ProcessPlan plan;
             plan.processId = candidate.processId;
             plan.name = candidate.name;
             plan.foreground = candidate.foreground;
-            plan.systemCritical = candidate.critical;
             plan.cpuUsagePercent = candidate.cpuUsagePercent;
             plan.gpuUsagePercent = candidate.gpuUsagePercent;
 
-            const bool isTarget =
-                candidate.processId == targetPid;
-
-            std::uint16_t previousIsland = 0;
+            if (mode == OptimizerMode::Gaming && !isTarget)
             {
-                std::lock_guard<std::mutex> lock(mutex_);
-                const auto it =
-                    processIslands_.find(instance);
-                if (it != processIslands_.end())
-                    previousIsland = it->second;
+                plan.currentPriority =
+                    NORMAL_PRIORITY_CLASS;
+                plan.targetPriority =
+                    NORMAL_PRIORITY_CLASS;
+                plan.decision =
+                    "sin interferencia: Windows decide";
+                output.processes.push_back(plan);
+                continue;
             }
 
-            std::uint16_t desiredIsland = 0;
-            if (isTarget)
-            {
-                desiredIsland = targetIsland;
-            }
-            else if (mode == OptimizerMode::Gaming &&
-                     targetIsland != 0)
-            {
-                desiredIsland = ChooseIsland(
-                    previousIsland,
-                    false,
-                    true,
-                    targetIsland,
-                    0xFFFF,
-                    0,
-                    topology.processors);
-            }
-            else
-            {
-                desiredIsland = ChooseIsland(
-                    previousIsland,
-                    false,
-                    false,
-                    0,
-                    0xFFFF,
-                    0,
-                    topology.processors);
-            }
-
-            if (desiredIsland == 0 && previousIsland != 0)
-                desiredIsland = previousIsland;
-
-            std::uint16_t island = desiredIsland;
-
-            // Exigir dos muestras seguidas antes de cambiar de isla evita
-            // oscilaciones de cache cuando dos islas tienen carga similar.
-            if (previousIsland != 0 &&
-                desiredIsland != previousIsland &&
-                !isTarget)
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                PendingIsland& pending = pendingIslands_[instance];
-
-                if (pending.island == desiredIsland)
-                    ++pending.confirmations;
-                else
-                {
-                    pending.island = desiredIsland;
-                    pending.confirmations = 1;
-                }
-
-                if (pending.confirmations < IslandConfirmTicks)
-                    island = previousIsland;
-                else
-                    pending.confirmations = 0;
-            }
-            else
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                pendingIslands_.erase(instance);
-            }
-
-            if (focusFrozen && previousIsland != 0)
-                island = previousIsland;
-
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                processIslands_[instance] = island;
-            }
-
-            HANDLE process = OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION |
-                    PROCESS_SET_INFORMATION,
-                FALSE,
-                candidate.processId);
-
-            int processPriority = NORMAL_PRIORITY_CLASS;
-            int targetProcessPriority = NORMAL_PRIORITY_CLASS;
-
-            if (mode == OptimizerMode::Gaming)
-            {
-                if (isTarget)
-                {
-                    // ABOVE_NORMAL evita invertir prioridades con hilos
-                    // auxiliares del propio juego.
-                    targetProcessPriority =
-                        ABOVE_NORMAL_PRIORITY_CLASS;
-                }
-                // Segundo plano se deja en prioridad normal: bajarlo
-                // puede ajustar auxiliares que el juego necesita.
-            }
-            else if (mode == OptimizerMode::Multitasking &&
-                     candidate.foreground)
-            {
-                targetProcessPriority =
-                    ABOVE_NORMAL_PRIORITY_CLASS;
-            }
-
-            if (process != nullptr)
-            {
-                const DWORD current =
-                    GetPriorityClass(process);
-                if (current != 0)
-                    processPriority =
-                        static_cast<int>(current);
-
-                const OriginalProcessState original =
-                    EnsureProcessOriginal(
-                        candidate.processId,
-                        startTime,
-                        process);
-
-                if (!focusFrozen &&
-                    original.hasPriority &&
-                    current !=
-                        static_cast<DWORD>(
-                            targetProcessPriority))
-                {
-                    if (SetPriorityClass(
-                            process,
-                            static_cast<DWORD>(
-                                targetProcessPriority)))
-                    {
-                        ++applied;
-                    }
-                    else
-                    {
-                        ++failed;
-                    }
-                }
-            }
-
-            plan.currentPriority = processPriority;
-            plan.targetPriority = targetProcessPriority;
+            activeProcesses.insert(instance);
 
             const auto threadsIt =
                 threadsByProcess.find(candidate.processId);
@@ -1365,8 +1421,7 @@ namespace Optimization
 
                     GROUP_AFFINITY currentGroupAffinity{};
                     if (GetThreadGroupAffinity(
-                            thread,
-                            &currentGroupAffinity))
+                            thread, &currentGroupAffinity))
                     {
                         currentGroup =
                             currentGroupAffinity.Group;
@@ -1376,8 +1431,7 @@ namespace Optimization
 
                     PROCESSOR_NUMBER currentIdealNumber{};
                     if (GetThreadIdealProcessorEx(
-                            thread,
-                            &currentIdealNumber))
+                            thread, &currentIdealNumber))
                     {
                         currentIdeal =
                             currentIdealNumber.Number;
@@ -1391,61 +1445,175 @@ namespace Optimization
                         currentPriority = queriedPriority;
                     }
 
-                    std::vector<std::size_t> chosen;
-                    std::uint64_t targetAffinity = 0;
-                    DWORD targetIdeal = 0;
+                    ThreadDecision decision;
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        const auto it =
+                            threadDecisions_.find(
+                                threadInstance);
+                        if (it != threadDecisions_.end())
+                            decision = it->second;
+                    }
 
-                    const bool hasTarget = BuildTarget(
+                    std::vector<
+                        std::pair<double, std::size_t>> ranking;
+
+                    const bool hasRanking = BuildCoreRanking(
                         topology,
-                        island,
+                        isTarget ? targetIsland : 0,
                         currentGroup,
                         original.hasAffinity
                             ? original.affinity
                             : currentAffinity,
                         isTarget,
-                        chosen,
-                        targetAffinity,
-                        targetIdeal);
+                        decision.coreIndex,
+                        ranking);
 
-                    if (!hasTarget)
+                    if (!hasRanking)
                     {
-                        targetAffinity = currentAffinity;
-                        targetIdeal = currentIdeal;
+                        CloseHandle(thread);
+                        continue;
                     }
 
-                    int targetThreadPriority =
-                        THREAD_PRIORITY_NORMAL;
+                    std::size_t chosenCore = ranking.front().second;
+                    double chosenScore = ranking.front().first;
 
-                    if (mode == OptimizerMode::Gaming)
+                    for (const auto& entry : ranking)
                     {
-                        if (isTarget)
+                        if (usedCores.find(entry.second) ==
+                            usedCores.end())
                         {
-                            targetThreadPriority =
-                                THREAD_PRIORITY_ABOVE_NORMAL;
+                            chosenCore = entry.second;
+                            chosenScore = entry.first;
+                            break;
                         }
                     }
-                    else if (mode ==
-                                 OptimizerMode::Multitasking &&
-                             candidate.foreground)
+
+                    std::size_t effectiveCore = chosenCore;
+
+                    if (decision.coreIndex != NoCore)
                     {
-                        targetThreadPriority =
-                            THREAD_PRIORITY_ABOVE_NORMAL;
+                        const double currentScore = CoreScore(
+                            topology,
+                            decision.coreIndex,
+                            isTarget ? targetIsland : 0,
+                            currentGroup,
+                            original.hasAffinity
+                                ? original.affinity
+                                : currentAffinity,
+                            isTarget,
+                            0.0,
+                            decision.coreIndex);
+
+                        const bool cooledDown =
+                            currentTick >= decision.changedTick &&
+                            currentTick - decision.changedTick >=
+                                CooldownTicks;
+
+                        if (focusFrozen || !cooledDown ||
+                            chosenScore + CoreMoveThreshold >=
+                                currentScore)
+                        {
+                            effectiveCore = decision.coreIndex;
+                            chosenScore = currentScore;
+                            decision.candidateCore = NoCore;
+                            decision.confirmations = 0;
+                        }
+                        else if (
+                            decision.candidateCore ==
+                            chosenCore)
+                        {
+                            ++decision.confirmations;
+
+                            if (decision.confirmations >=
+                                IslandConfirmTicks)
+                            {
+                                decision.confirmations = 0;
+                                decision.candidateCore = NoCore;
+                            }
+                            else
+                            {
+                                effectiveCore =
+                                    decision.coreIndex;
+                            }
+                        }
+                        else
+                        {
+                            decision.candidateCore =
+                                chosenCore;
+                            decision.confirmations = 1;
+                            effectiveCore =
+                                decision.coreIndex;
+                        }
                     }
 
-                    activeThreads.insert(threadInstance);
+                    std::vector<ULONG> desiredIds =
+                        CpuSetIdsForCore(
+                            topology,
+                            effectiveCore,
+                            currentGroup,
+                            original.hasAffinity
+                                ? original.affinity
+                                : currentAffinity,
+                            cpuSets);
 
-                    // Nunca ampliar ni estrechar la afinidad original.
-                    // Como mucho restaurarla si una version anterior
-                    // del orquestador la habia limitado.
-                    const bool affinityNeeded =
-                        original.hasAffinity &&
-                        currentAffinity != original.affinity;
+                    DWORD desiredIdeal = currentIdeal;
+                    std::size_t representative =
+                        topology.processors.size();
+
+                    for (std::size_t index = 0;
+                         index < topology.processors.size();
+                         ++index)
+                    {
+                        const TopologyProcessor& processor =
+                            topology.processors[index];
+
+                        if (processor.physicalCoreIndex !=
+                                effectiveCore ||
+                            processor.group != currentGroup)
+                        {
+                            continue;
+                        }
+
+                        if (representative ==
+                                topology.processors.size() ||
+                            processor.logicalIndex <
+                                topology.processors[
+                                    representative]
+                                    .logicalIndex)
+                        {
+                            representative = index;
+                        }
+                    }
+
+                    if (representative <
+                        topology.processors.size())
+                    {
+                        desiredIdeal =
+                            topology.processors[
+                                representative].logicalIndex;
+                    }
+
+                    std::vector<ULONG> currentIds;
+                    const bool hasCurrentIds =
+                        QueryThreadCpuSets(thread, currentIds);
+
+                    const bool useCpuSets = !desiredIds.empty();
+                    const bool restoreIdeal =
+                        original.idealChanged && useCpuSets;
+
+                    const bool needsSetChange =
+                        useCpuSets &&
+                        (!hasCurrentIds ||
+                         currentIds != desiredIds);
+
+                    const bool needsIdealChange =
+                        !useCpuSets &&
+                        desiredIdeal != currentIdeal;
 
                     const bool needsChange =
-                        affinityNeeded ||
-                        targetIdeal != currentIdeal ||
-                        targetThreadPriority !=
-                            currentPriority;
+                        needsSetChange || needsIdealChange ||
+                        restoreIdeal;
 
                     bool appliedThread = !needsChange;
                     bool verified = !needsChange;
@@ -1454,9 +1622,7 @@ namespace Optimization
                     {
                         bool allowed = !focusFrozen;
                         {
-                            std::lock_guard<std::mutex>
-                                lock(mutex_);
-
+                            std::lock_guard<std::mutex> lock(mutex_);
                             const auto lastIt =
                                 threadLastChange_.find(
                                     threadInstance);
@@ -1465,7 +1631,8 @@ namespace Optimization
                                 allowed &&
                                 (lastIt ==
                                      threadLastChange_.end() ||
-                                 tick_ - lastIt->second >=
+                                 currentTick -
+                                         lastIt->second >=
                                      CooldownTicks);
                         }
 
@@ -1475,52 +1642,47 @@ namespace Optimization
                         {
                             bool ok = true;
 
-                            // Solo restaurar la afinidad original si
-                            // una pasada anterior la habia estrechado.
-                            if (affinityNeeded)
+                            if (restoreIdeal &&
+                                original.hasIdeal)
                             {
-                                GROUP_AFFINITY desired{};
-                                desired.Group =
-                                    original.hasAffinity
-                                        ? original.group
-                                        : currentGroup;
-                                desired.Mask =
-                                    original.affinity;
-
-                                ok =
-                                    SetThreadGroupAffinity(
-                                        thread, &desired,
-                                        nullptr) != FALSE;
-                            }
-
-                            if (ok &&
-                                (targetIdeal != currentIdeal ||
-                                 affinityNeeded))
-                            {
-                                PROCESSOR_NUMBER desiredIdeal{};
-                                desiredIdeal.Group =
-                                    currentGroup;
-                                desiredIdeal.Number =
+                                PROCESSOR_NUMBER number{};
+                                number.Group = original.group;
+                                number.Number =
                                     static_cast<BYTE>(
                                         std::min<DWORD>(
-                                            targetIdeal, 63));
+                                            original.idealProcessor,
+                                            63));
 
                                 ok =
                                     SetThreadIdealProcessorEx(
-                                        thread,
-                                        &desiredIdeal,
+                                        thread, &number,
                                         nullptr) != FALSE;
                             }
 
-                            if (ok &&
-                                targetThreadPriority !=
-                                    currentPriority)
+                            if (ok && needsSetChange)
                             {
                                 ok =
-                                    SetThreadPriority(
+                                    SetThreadSelectedCpuSets(
                                         thread,
-                                        targetThreadPriority) !=
+                                        desiredIds.data(),
+                                        static_cast<ULONG>(
+                                            desiredIds.size())) !=
                                     FALSE;
+                            }
+
+                            if (ok && needsIdealChange)
+                            {
+                                PROCESSOR_NUMBER number{};
+                                number.Group = currentGroup;
+                                number.Number =
+                                    static_cast<BYTE>(
+                                        std::min<DWORD>(
+                                            desiredIdeal, 63));
+
+                                ok =
+                                    SetThreadIdealProcessorEx(
+                                        thread, &number,
+                                        nullptr) != FALSE;
                             }
 
                             appliedThread = ok;
@@ -1529,15 +1691,37 @@ namespace Optimization
                             {
                                 ++changesThisTick;
                                 ++applied;
-
                                 verified = true;
+
+                                decision.coreIndex =
+                                    effectiveCore;
+                                decision.candidateCore =
+                                    NoCore;
+                                decision.confirmations = 0;
+                                decision.changedTick =
+                                    currentTick;
+
                                 {
-                                    std::lock_guard<
-                                        std::mutex>
+                                    std::lock_guard<std::mutex>
                                         lock(mutex_);
+
                                     threadLastChange_[
                                         threadInstance] =
-                                            tick_;
+                                            currentTick;
+                                    threadDecisions_[
+                                        threadInstance] =
+                                            decision;
+
+                                    auto it =
+                                        originalThreads_.find(
+                                            threadInstance);
+                                    if (it !=
+                                        originalThreads_.end())
+                                    {
+                                        it->second.idealChanged =
+                                            !useCpuSets &&
+                                            needsIdealChange;
+                                    }
                                 }
                             }
                             else
@@ -1550,57 +1734,45 @@ namespace Optimization
                             appliedThread = false;
                         }
                     }
+                    else
+                    {
+                        decision.coreIndex = effectiveCore;
+                        decision.candidateCore = NoCore;
+                        decision.confirmations = 0;
+
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        threadDecisions_[threadInstance] =
+                            decision;
+                    }
 
                     if (appliedThread && needsChange)
                     {
-                        if (affinityNeeded)
+                        if (needsSetChange)
                         {
-                            GROUP_AFFINITY afterAffinity{};
-
-                            if (GetThreadGroupAffinity(
-                                    thread, &afterAffinity))
-                            {
-                                verified =
-                                    verified &&
-                                    afterAffinity.Mask ==
-                                        original.affinity;
-                            }
-                            else
-                            {
-                                verified = false;
-                            }
-                        }
-
-                        if (targetIdeal != currentIdeal ||
-                            affinityNeeded)
-                        {
-                            PROCESSOR_NUMBER afterIdeal{};
-
-                            if (GetThreadIdealProcessorEx(
-                                    thread, &afterIdeal))
-                            {
-                                verified =
-                                    verified &&
-                                    afterIdeal.Number ==
-                                        targetIdeal;
-                            }
-                            else
-                            {
-                                verified = false;
-                            }
-                        }
-
-                        if (targetThreadPriority !=
-                            currentPriority)
-                        {
+                            std::vector<ULONG> afterIds;
                             verified =
                                 verified &&
-                                GetThreadPriority(thread) ==
-                                    targetThreadPriority;
+                                QueryThreadCpuSets(
+                                    thread, afterIds) &&
+                                afterIds == desiredIds;
+                        }
+
+                        if (needsIdealChange)
+                        {
+                            PROCESSOR_NUMBER afterIdeal{};
+                            verified =
+                                verified &&
+                                GetThreadIdealProcessorEx(
+                                    thread, &afterIdeal) &&
+                                afterIdeal.Number ==
+                                    desiredIdeal;
                         }
                     }
 
                     CloseHandle(thread);
+
+                    activeThreads.insert(threadInstance);
+                    usedCores.insert(effectiveCore);
 
                     ThreadPlan threadPlan;
                     threadPlan.threadId = load.threadId;
@@ -1611,34 +1783,44 @@ namespace Optimization
                         currentAffinity;
                     threadPlan.targetGroup = currentGroup;
                     threadPlan.targetAffinity =
-                        affinityNeeded
-                            ? original.affinity
-                            : currentAffinity;
+                        currentAffinity;
                     threadPlan.currentIdealProcessor =
                         currentIdeal;
                     threadPlan.targetIdealProcessor =
-                        targetIdeal;
+                        useCpuSets
+                            ? desiredIdeal
+                            : (needsIdealChange
+                                   ? desiredIdeal
+                                   : currentIdeal);
                     threadPlan.currentPriority =
                         currentPriority;
                     threadPlan.targetPriority =
-                        targetThreadPriority;
+                        currentPriority;
 
+                    if (effectiveCore <
+                        topology.cores.size())
                     {
-                        // `chosen` contiene indices reales del vector de
-                        // topologia; usar targetIdeal como indice solo
-                        // seria valido en el grupo 0.
-                        if (!chosen.empty() &&
-                            chosen.front() <
-                                topology.processors.size())
-                        {
-                            const TopologyProcessor& processor =
-                                topology.processors[
-                                    chosen.front()];
+                        const TopologyCore& core =
+                            topology.cores[effectiveCore];
 
+                        for (std::uint32_t index :
+                             core.logicalIndices)
+                        {
+                            if (index < output.cores.size())
+                                ++output.cores[index]
+                                      .threadCount;
+                        }
+
+                        if (!output.cores.empty() &&
+                            representative <
+                                output.cores.size())
+                        {
                             threadPlan.l2CacheId =
-                                processor.l2CacheId;
+                                output.cores[
+                                    representative].l2CacheId;
                             threadPlan.l3CacheId =
-                                processor.l3CacheId;
+                                output.cores[
+                                    representative].l3CacheId;
                         }
                     }
 
@@ -1667,75 +1849,40 @@ namespace Optimization
                         threadPlan.reason =
                             "congelado tras cambio de foco";
                     }
-                    else if (isTarget &&
-                        topology.kind ==
-                            TopologyKind::Hybrid)
+                    else if (useCpuSets)
                     {
                         threadPlan.reason =
-                            "foco: nucleo ideal, sin fijar afinidad";
+                            "CPU Set blando: nucleo fisico "
+                            "exclusivo, sin afinidad dura";
                     }
-                    else if (isTarget)
+                    else if (needsIdealChange)
                     {
                         threadPlan.reason =
-                            "foco: ideal por carga/frecuencia/SMT";
-                    }
-                    else if (island != 0)
-                    {
-                        threadPlan.reason =
-                            "misma L2/L3, ideal sin fijar afinidad";
+                            "nucleo ideal alternativo sin CPU Sets";
                     }
                     else
                     {
                         threadPlan.reason =
-                            "equilibrio de carga sin datos de cache";
+                            "prioridad y afinidad intactas";
                     }
 
                     plan.threads.push_back(threadPlan);
-
-                    for (std::size_t index : chosen)
-                    {
-                        if (index >= output.cores.size())
-                            continue;
-
-                        CoreAssignment& assignment =
-                            output.cores[index];
-                        ++assignment.threadCount;
-
-                        if (assignment.reason.empty() ||
-                            isTarget)
-                        {
-                            assignment.reason =
-                                threadPlan.reason;
-                        }
-                    }
                 }
             }
 
-            if (isTarget)
-            {
-                plan.decision =
-                    "aislamiento del proceso con foco";
-            }
-            else if (island != 0)
-            {
-                plan.decision =
-                    "reparto por isla de cache";
-            }
-            else
-            {
-                plan.decision = "reparto por carga";
-            }
+            plan.decision =
+                isTarget
+                    ? "nucleos fisicos suaves para el foco"
+                    : (mode == OptimizerMode::Gaming
+                           ? "sin interferencia"
+                           : "reparto suave por nucleo fisico");
 
             plan.threadCount =
                 static_cast<DWORD>(plan.threads.size());
 
             output.processes.push_back(plan);
-
-            if (process != nullptr)
-                CloseHandle(process);
         }
 
-        // Restaurar hilos y prioridades que ya no son candidatos.
         std::vector<std::pair<
             ThreadInstance, OriginalThreadState>> staleThreads;
         std::vector<std::pair<
@@ -1771,6 +1918,7 @@ namespace Optimization
             std::lock_guard<std::mutex> lock(mutex_);
             originalThreads_.erase(entry.first);
             threadLastChange_.erase(entry.first);
+            threadDecisions_.erase(entry.first);
         }
 
         for (const auto& entry : staleProcesses)

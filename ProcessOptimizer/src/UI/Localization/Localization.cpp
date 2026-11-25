@@ -162,7 +162,18 @@ namespace UI::Localization
             "L3",
             "Status",
             "Current",
-            "Target"
+            "Target",
+
+            "Performance test",
+            "Run performance test",
+            "Test running...",
+            "No profile yet",
+            "Saved profile",
+            "Rank",
+            "Peak",
+            "Average",
+            "Score",
+            "Run the performance test before enabling a mode"
         }};
 
         const std::array<const char*, Count> SpanishTexts{{
@@ -315,7 +326,19 @@ namespace UI::Localization
             "L3",
             "Estado",
             "Actual",
-            "Destino"
+            "Destino",
+
+            "Prueba de rendimiento",
+            "Ejecutar prueba de rendimiento",
+            "Prueba en curso...",
+            "Aun no hay perfil",
+            "Perfil guardado",
+            "Puesto",
+            "Pico",
+            "Media",
+            "Puntuaci\303\263n",
+            "Ejecuta la prueba de rendimiento antes de activar "
+            "un modo"
         }};
     }
 

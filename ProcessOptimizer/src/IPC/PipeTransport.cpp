@@ -288,10 +288,32 @@ namespace IPC
 
         case Request::GetState:
         {
-            const State state = provider_();
-            payload = Serialize(state);
-            header.sequence = state.sequence;
-            header.timestampMs = state.timestampMs;
+            const auto state = provider_();
+
+            if (!state)
+            {
+                header.type =
+                    static_cast<std::uint32_t>(
+                        ResponseType::Error);
+                break;
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(
+                    stateCacheMutex_);
+
+                if (cachedPayload_.empty() ||
+                    cachedSequence_ != state->sequence)
+                {
+                    cachedPayload_ = Serialize(*state);
+                    cachedSequence_ = state->sequence;
+                }
+
+                payload = cachedPayload_;
+            }
+
+            header.sequence = state->sequence;
+            header.timestampMs = state->timestampMs;
             header.type =
                 static_cast<std::uint32_t>(
                     ResponseType::State);
@@ -300,6 +322,7 @@ namespace IPC
 
         case Request::SetOptimizerConfig:
         case Request::SetForegroundProcess:
+        case Request::StartBenchmark:
         {
             const bool handled =
                 handler_ &&
@@ -393,6 +416,21 @@ namespace IPC
 
         return RoundTrip(
             Request::SetForegroundProcess,
+            ResponseType::Ack,
+            Serialize(command),
+            responsePayload);
+    }
+
+    bool PipeClient::StartBenchmark(
+        std::uint32_t durationMs)
+    {
+        BenchmarkCommand command;
+        command.durationMs = durationMs;
+
+        std::vector<std::uint8_t> responsePayload;
+
+        return RoundTrip(
+            Request::StartBenchmark,
             ResponseType::Ack,
             Serialize(command),
             responsePayload);

@@ -21,14 +21,15 @@ namespace IPC
     inline constexpr wchar_t PipeName[] =
         L"\\\\.\\pipe\\ProcessOptimizer.Monitor";
     inline constexpr std::uint32_t ProtocolMagic = 0x504F4D31; // "POM1"
-    inline constexpr std::uint32_t ProtocolVersion = 4;
+    inline constexpr std::uint32_t ProtocolVersion = 5;
 
     enum class Request : std::uint32_t
     {
         Ping = 1,
         GetState = 2,
         SetOptimizerConfig = 3,
-        SetForegroundProcess = 4
+        SetForegroundProcess = 4,
+        StartBenchmark = 5
     };
 
     enum class ResponseType : std::uint32_t
@@ -49,6 +50,11 @@ namespace IPC
     struct ForegroundProcessCommand
     {
         DWORD processId = 0;
+    };
+
+    struct BenchmarkCommand
+    {
+        std::uint32_t durationMs = 4000;
     };
 
     struct ResponseHeader
@@ -1067,6 +1073,63 @@ namespace IPC
                    r.Str(v.reason);
         }
 
+        inline void Write(Writer& w, const Optimization::ProcessorBenchmark& v)
+        {
+            w.Pod(v.group);
+            w.Pod(v.logicalIndex);
+            w.Pod(v.physicalCoreIndex);
+            WriteEnum(w, v.coreClass);
+            w.Pod(v.peakMHz);
+            w.Pod(v.averageMHz);
+            w.Pod(v.workRate);
+            w.Pod(v.score);
+            w.Pod(v.rank);
+        }
+        inline bool Read(Reader& r, Optimization::ProcessorBenchmark& v)
+        {
+            return r.Pod(v.group) &&
+                   r.Pod(v.logicalIndex) &&
+                   r.Pod(v.physicalCoreIndex) &&
+                   ReadEnum(r, v.coreClass) &&
+                   r.Pod(v.peakMHz) &&
+                   r.Pod(v.averageMHz) &&
+                   r.Pod(v.workRate) &&
+                   r.Pod(v.score) &&
+                   r.Pod(v.rank);
+        }
+
+        inline void Write(Writer& w, const Optimization::CpuBenchmarkProfile& v)
+        {
+            w.Pod(v.version);
+            w.Pod(v.createdMs);
+            w.Pod(v.durationMs);
+            w.Pod(v.topologySignature);
+            w.Vec(v.processors, [](Writer& w, const auto& v) { Write(w, v); });
+        }
+        inline bool Read(Reader& r, Optimization::CpuBenchmarkProfile& v)
+        {
+            return r.Pod(v.version) &&
+                   r.Pod(v.createdMs) &&
+                   r.Pod(v.durationMs) &&
+                   r.Pod(v.topologySignature) &&
+                   r.Vec(v.processors, [](Reader& r, auto& v) { return Read(r, v); });
+        }
+
+        inline void Write(Writer& w, const Optimization::BenchmarkState& v)
+        {
+            WriteEnum(w, v.status);
+            w.Pod(v.progressPercent);
+            w.Str(v.statusText);
+            Write(w, v.profile);
+        }
+        inline bool Read(Reader& r, Optimization::BenchmarkState& v)
+        {
+            return ReadEnum(r, v.status) &&
+                   r.Pod(v.progressPercent) &&
+                   r.Str(v.statusText) &&
+                   Read(r, v.profile);
+        }
+
         inline void Write(Writer& w, const Optimization::OptimizerState& v)
         {
             w.Bool(v.enabled);
@@ -1079,6 +1142,7 @@ namespace IPC
             w.Pod(v.revertedChanges);
             w.Pod(v.failedChanges);
             w.Str(v.status);
+            Write(w, v.benchmark);
             w.Vec(v.processes, [](Writer& w, const auto& v) { Write(w, v); });
             w.Vec(v.cores, [](Writer& w, const auto& v) { Write(w, v); });
         }
@@ -1094,6 +1158,7 @@ namespace IPC
                    r.Pod(v.revertedChanges) &&
                    r.Pod(v.failedChanges) &&
                    r.Str(v.status) &&
+                   Read(r, v.benchmark) &&
                    r.Vec(v.processes, [](Reader& r, auto& v) { return Read(r, v); }) &&
                    r.Vec(v.cores, [](Reader& r, auto& v) { return Read(r, v); });
         }
@@ -1134,6 +1199,24 @@ namespace IPC
     {
         Reader reader(data, size);
         return reader.Pod(command.processId) &&
+               reader.Remaining() == 0;
+    }
+
+    inline std::vector<std::uint8_t> Serialize(
+        const BenchmarkCommand& command)
+    {
+        Writer writer;
+        writer.Pod(command.durationMs);
+        return writer.data;
+    }
+
+    inline bool Deserialize(
+        const std::uint8_t* data,
+        std::size_t size,
+        BenchmarkCommand& command)
+    {
+        Reader reader(data, size);
+        return reader.Pod(command.durationMs) &&
                reader.Remaining() == 0;
     }
 

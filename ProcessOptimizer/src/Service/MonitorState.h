@@ -3,6 +3,7 @@
 #include "../IPC/Protocol.h"
 
 #include <cstdint>
+#include <memory>
 #include <mutex>
 
 namespace Service
@@ -36,8 +37,14 @@ namespace Service
             const Optimization::TopologySnapshot& topology);
         std::uint32_t SetOptimizer(
             const Optimization::OptimizerState& optimizer);
+        std::uint32_t SetBenchmark(
+            const Optimization::BenchmarkState& benchmark);
 
         IPC::State Snapshot() const;
+
+        // Devuelve una instantanea compartida solo cuando la secuencia
+        // cambio. Evita copiar ~100 KB en cada sondeo de la UI.
+        std::shared_ptr<const IPC::State> CachedSnapshot() const;
 
         // Aplica un estado recibido por IPC en modo cliente.
         void Replace(const IPC::State& state);
@@ -49,5 +56,7 @@ namespace Service
 
         mutable std::mutex mutex_;
         IPC::State state_;
+        mutable std::shared_ptr<const IPC::State> cachedState_;
+        mutable std::uint64_t cachedSequence_ = 0;
     };
 }
