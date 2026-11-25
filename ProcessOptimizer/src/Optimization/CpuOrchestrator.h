@@ -204,10 +204,6 @@ namespace Optimization
         bool IsCritical(const std::wstring& name) const;
         bool IsUserSession(DWORD processId) const;
 
-        OriginalProcessState EnsureProcessOriginal(
-            DWORD processId,
-            std::uint64_t startTime100ns,
-            HANDLE process);
         OriginalThreadState EnsureThreadOriginal(
             DWORD processId,
             std::uint64_t processStart100ns,
@@ -297,6 +293,5 @@ namespace Optimization
             ThreadDecision,
             ThreadInstanceHash> threadDecisions_;
         std::uint64_t foregroundStart100ns_ = 0;
-        std::uint64_t lastFocusChangeTick_ = 0;
     };
 }

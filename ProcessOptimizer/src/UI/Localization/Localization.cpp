@@ -173,7 +173,22 @@ namespace UI::Localization
             "Peak",
             "Average",
             "Score",
-            "Run the performance test before enabling a mode"
+            "Run the performance test before enabling a mode",
+
+            "Frame time measurement (DXGI ETW)",
+            "No hooks, game untouched",
+            "Put the game in the foreground to measure.",
+            "Measuring frame time...",
+            "Stable frame time: Windows decides",
+            "Possible cap/VSync: no intervention",
+            "GPU limit: no intervention",
+            "CPU-bound: measure before acting",
+            "Stutter: measure A/B before acting",
+            "FPS: %.1f   p50: %.1f ms   p95: %.1f ms   p99: %.1f ms",
+            "Samples: %u   max: %.1f ms   SyncInterval: %d   Present(): %.2f ms",
+            "PID: %lu   age: %llu s",
+            "PID: %lu   age: unknown",
+            "No recent frame data"
         }};
 
         const std::array<const char*, Count> SpanishTexts{{
@@ -338,7 +353,22 @@ namespace UI::Localization
             "Media",
             "Puntuaci\303\263n",
             "Ejecuta la prueba de rendimiento antes de activar "
-            "un modo"
+            "un modo",
+
+            "Medicion de frame time (DXGI ETW)",
+            "Sin hooks ni cambios en el juego",
+            "Pon el juego en primer plano para medir.",
+            "Midiendo frame time...",
+            "Frame time estable: Windows decide",
+            "Posible cap/VSync: no intervenir",
+            "GPU al limite: no intervenir",
+            "CPU-bound: medir antes de actuar",
+            "Stutter: medir A/B antes de actuar",
+            "FPS: %.1f   p50: %.1f ms   p95: %.1f ms   p99: %.1f ms",
+            "Muestras: %u   max: %.1f ms   SyncInterval: %d   Present(): %.2f ms",
+            "PID: %lu   edad: %llu s",
+            "PID: %lu   edad: desconocida",
+            "Sin datos recientes de frames"
         }};
     }
 

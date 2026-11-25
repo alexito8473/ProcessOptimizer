@@ -284,6 +284,10 @@ void ImGuiRenderer::EndFrame()
     if (drawHash == lastDrawHash_)
         return;
 
+    // Tras un Resize fallido el RTV puede ser nulo: no enviar a Present.
+    if (!renderTarget_ || !swapChain_)
+        return;
+
     lastDrawHash_ = drawHash;
 
     context_->OMSetRenderTargets(
@@ -312,12 +316,6 @@ void ImGuiRenderer::Resize(UINT width, UINT height)
 
     context_->OMSetRenderTargets(0, nullptr, nullptr);
 
-    if (renderTarget_)
-    {
-        renderTarget_->Release();
-        renderTarget_ = nullptr;
-    }
-
     const HRESULT result = swapChain_->ResizeBuffers(
         0,
         width,
@@ -325,8 +323,26 @@ void ImGuiRenderer::Resize(UINT width, UINT height)
         DXGI_FORMAT_UNKNOWN,
         0);
 
+    // El RTV antiguo apunta al backbuffer anterior: liberarlo solo
+    // cuando ResizeBuffers ha tenido exito. Si falla, recrear desde el
+    // backbuffer que siga vivo para no dejar la ventana en negro.
     if (FAILED(result))
+    {
+        if (renderTarget_)
+        {
+            renderTarget_->Release();
+            renderTarget_ = nullptr;
+        }
+
+        CreateRenderTarget();
         return;
+    }
+
+    if (renderTarget_)
+    {
+        renderTarget_->Release();
+        renderTarget_ = nullptr;
+    }
 
     CreateRenderTarget();
 }
@@ -352,7 +368,7 @@ bool ImGuiRenderer::BeginRegion(
 
     // Guardar viewport actual.
     previousViewportCount_ =
-        D3D11_VIEWPORT_AND_SCISSORRECT_MAX_INDEX;
+        D3D11_VIEWPORT_AND_SCISSORRECT_MAX_INDEX + 1;
 
     context_->RSGetViewports(
         &previousViewportCount_,

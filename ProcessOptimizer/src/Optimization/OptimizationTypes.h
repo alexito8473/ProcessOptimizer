@@ -210,6 +210,36 @@ namespace Optimization
         CpuBenchmarkProfile profile;
     };
 
+    enum class FrameVerdict : std::int32_t
+    {
+        NoData = 0,
+        Stable = 1,
+        Capped = 2,
+        GpuBound = 3,
+        CpuBound = 4,
+        Unstable = 5,
+        Unavailable = 6
+    };
+
+    // Resumen agregado de frame time. Se calcula en el servicio y se envia
+    // a la UI una vez por segundo: nunca se manda una muestra por frame.
+    struct FrameProbeSnapshot
+    {
+        bool active = false;
+        DWORD processId = 0;
+        std::uint64_t lastUpdateMs = 0;
+        std::uint32_t sampleCount = 0;
+        double fps = 0.0;
+        double p50Ms = 0.0;
+        double p95Ms = 0.0;
+        double p99Ms = 0.0;
+        double maxMs = 0.0;
+        double avgCpuInPresentMs = 0.0;
+        std::int32_t syncInterval = 0;
+        FrameVerdict verdict = FrameVerdict::NoData;
+        std::string statusText;
+    };
+
     struct OptimizerState
     {
         bool enabled = false;
@@ -226,6 +256,7 @@ namespace Optimization
 
         std::string status;
         BenchmarkState benchmark;
+        FrameProbeSnapshot frameProbe;
         std::vector<ProcessPlan> processes;
         std::vector<CoreAssignment> cores;
     };

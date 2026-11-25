@@ -21,7 +21,7 @@ namespace IPC
     inline constexpr wchar_t PipeName[] =
         L"\\\\.\\pipe\\ProcessOptimizer.Monitor";
     inline constexpr std::uint32_t ProtocolMagic = 0x504F4D31; // "POM1"
-    inline constexpr std::uint32_t ProtocolVersion = 5;
+    inline constexpr std::uint32_t ProtocolVersion = 6;
 
     enum class Request : std::uint32_t
     {
@@ -1130,6 +1130,44 @@ namespace IPC
                    Read(r, v.profile);
         }
 
+        inline void Write(
+            Writer& w,
+            const Optimization::FrameProbeSnapshot& v)
+        {
+            w.Bool(v.active);
+            w.Pod(v.processId);
+            w.Pod(v.lastUpdateMs);
+            w.Pod(v.sampleCount);
+            w.Pod(v.fps);
+            w.Pod(v.p50Ms);
+            w.Pod(v.p95Ms);
+            w.Pod(v.p99Ms);
+            w.Pod(v.maxMs);
+            w.Pod(v.avgCpuInPresentMs);
+            w.Pod(v.syncInterval);
+            WriteEnum(w, v.verdict);
+            w.Str(v.statusText);
+        }
+
+        inline bool Read(
+            Reader& r,
+            Optimization::FrameProbeSnapshot& v)
+        {
+            return r.Bool(v.active) &&
+                   r.Pod(v.processId) &&
+                   r.Pod(v.lastUpdateMs) &&
+                   r.Pod(v.sampleCount) &&
+                   r.Pod(v.fps) &&
+                   r.Pod(v.p50Ms) &&
+                   r.Pod(v.p95Ms) &&
+                   r.Pod(v.p99Ms) &&
+                   r.Pod(v.maxMs) &&
+                   r.Pod(v.avgCpuInPresentMs) &&
+                   r.Pod(v.syncInterval) &&
+                   ReadEnum(r, v.verdict) &&
+                   r.Str(v.statusText);
+        }
+
         inline void Write(Writer& w, const Optimization::OptimizerState& v)
         {
             w.Bool(v.enabled);
@@ -1143,6 +1181,7 @@ namespace IPC
             w.Pod(v.failedChanges);
             w.Str(v.status);
             Write(w, v.benchmark);
+            Write(w, v.frameProbe);
             w.Vec(v.processes, [](Writer& w, const auto& v) { Write(w, v); });
             w.Vec(v.cores, [](Writer& w, const auto& v) { Write(w, v); });
         }
@@ -1159,6 +1198,7 @@ namespace IPC
                    r.Pod(v.failedChanges) &&
                    r.Str(v.status) &&
                    Read(r, v.benchmark) &&
+                   Read(r, v.frameProbe) &&
                    r.Vec(v.processes, [](Reader& r, auto& v) { return Read(r, v); }) &&
                    r.Vec(v.cores, [](Reader& r, auto& v) { return Read(r, v); });
         }

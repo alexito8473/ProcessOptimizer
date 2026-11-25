@@ -39,6 +39,8 @@ namespace Service
             const Optimization::OptimizerState& optimizer);
         std::uint32_t SetBenchmark(
             const Optimization::BenchmarkState& benchmark);
+        std::uint32_t SetFrameProbe(
+            const Optimization::FrameProbeSnapshot& frameProbe);
 
         IPC::State Snapshot() const;
 

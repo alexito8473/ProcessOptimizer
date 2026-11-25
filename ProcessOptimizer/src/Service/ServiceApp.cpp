@@ -1,5 +1,6 @@
 #include "ServiceApp.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace Service
@@ -14,10 +15,15 @@ namespace Service
         if (subscribed_)
             return true;
 
+        stopping_.store(false);
+
         cpuSubscription_ = events_.Subscribe<CpuSnapshot>(
             "CPU",
             [this](const CpuSnapshot& snapshot)
             {
+                if (stopping_.load())
+                    return;
+
                 state_.ApplyCpu(snapshot);
                 if (orchestrator_)
                     orchestrator_->OnCpuSnapshot(snapshot);
@@ -28,6 +34,9 @@ namespace Service
                 "MEMORY",
                 [this](const MemorySnapshot& snapshot)
                 {
+                    if (stopping_.load())
+                        return;
+
                     state_.ApplyMemory(snapshot);
                 });
 
@@ -35,7 +44,22 @@ namespace Service
             "GPU",
             [this](const GpuSnapshot& snapshot)
             {
+                if (stopping_.load())
+                    return;
+
                 state_.ApplyGpu(snapshot);
+
+                if (frameProbe_)
+                {
+                    double maxUsage = 0.0;
+                    for (const GpuAdapterInfo& gpu :
+                         snapshot.gpus)
+                    {
+                        maxUsage = (std::max)(
+                            maxUsage, gpu.usagePercent);
+                    }
+                    frameProbe_->SetGpuUsagePercent(maxUsage);
+                }
             });
 
         processSubscription_ =
@@ -43,7 +67,11 @@ namespace Service
                 "PROCESS",
                 [this](const ProcessSnapshot& snapshot)
                 {
+                    if (stopping_.load())
+                        return;
+
                     state_.ApplyProcesses(snapshot);
+                    UpdateFrameProbeTarget(snapshot);
                     if (orchestrator_)
                         orchestrator_->OnProcessSnapshot(
                             snapshot);
@@ -63,6 +91,19 @@ namespace Service
                 });
         orchestrator_->SetTopology(topology_);
         orchestrator_->Start();
+
+        // Telemetria primero: sin una medida de frame time no se toca
+        // ningun hilo del juego. La sonda corre en LocalSystem y no
+        // inyecta codigo en el proceso observado.
+        frameProbe_ =
+            std::make_unique<Optimization::FrameProbe>(
+                [this](
+                    const Optimization::FrameProbeSnapshot&
+                        snapshot)
+                {
+                    state_.SetFrameProbe(snapshot);
+                });
+        frameProbe_->Start();
 
         benchmark_ =
             std::make_unique<Optimization::CpuBenchmark>(
@@ -205,6 +246,17 @@ namespace Service
 
                     orchestrator_->SetForegroundProcess(
                         command.processId);
+
+                    {
+                        std::lock_guard<std::mutex> lock(
+                            foregroundRequestMutex_);
+                        requestedForegroundPid_ =
+                            command.processId;
+                    }
+
+                    if (frameProbe_)
+                        frameProbe_->SetTargetProcess(
+                            command.processId);
                     return true;
                 }
 
@@ -268,18 +320,106 @@ namespace Service
         return true;
     }
 
+    void ServiceApp::UpdateFrameProbeTarget(
+        const ProcessSnapshot& snapshot)
+    {
+        if (!frameProbe_)
+            return;
+
+        DWORD requested = 0;
+        {
+            std::lock_guard<std::mutex> lock(
+                foregroundRequestMutex_);
+            requested = requestedForegroundPid_;
+        }
+
+        if (requested == 0)
+        {
+            frameProbe_->SetTargetProcess(0);
+            return;
+        }
+
+        const ProcessInfo* requestedInfo = nullptr;
+        DWORD childPid = 0;
+        double childGpu = 0.0;
+
+        for (const ProcessInfo& process :
+             snapshot.processes)
+        {
+            if (process.processId == requested)
+                requestedInfo = &process;
+
+            if (process.parentProcessId != requested)
+                continue;
+
+            const bool own =
+                process.processId == GetCurrentProcessId() ||
+                process.name.find(L"ProcessOptimizer") !=
+                    std::wstring::npos;
+
+            if (own)
+                continue;
+
+            if (process.gpuUsagePercent > childGpu)
+            {
+                childPid = process.processId;
+                childGpu = process.gpuUsagePercent;
+            }
+        }
+
+        // El PID del primer plano desaparecio: dejar de medir antes que
+        // arriesgarse a observar un proceso distinto que reutilizo el ID.
+        if (requestedInfo == nullptr)
+        {
+            frameProbe_->SetTargetProcess(0);
+            return;
+        }
+
+        DWORD target = requested;
+
+        // LeagueClient.exe suele tener el foco mientras el render lo hace
+        // League of Legends.exe. Seguir unicamente al hijo directo con GPU
+        // real; nunca a un proceso no relacionado. No se toca prioridad
+        // ni afinidad de ninguno de los dos.
+        if (requestedInfo->gpuUsagePercent < 2.0 &&
+            childPid != 0 && childGpu >= 2.0)
+        {
+            target = childPid;
+        }
+
+        frameProbe_->SetTargetProcess(target);
+    }
+
     void ServiceApp::Stop()
     {
+        stopping_.store(true);
+
+        {
+            std::lock_guard<std::mutex> lock(
+                foregroundRequestMutex_);
+            requestedForegroundPid_ = 0;
+        }
+
         if (pipe_)
         {
             pipe_->Stop();
             pipe_.reset();
         }
 
-        if (benchmark_)
+        // El monitor se calla primero: sus callbacks leen los objetos
+        // de optimizacion. Un join tardio permitia usar punteros ya
+        // liberados mientras el servicio se apagaba.
+        if (subscribed_)
         {
-            benchmark_->Stop();
-            benchmark_.reset();
+            events_.Unsubscribe<CpuSnapshot>(
+                "CPU", cpuSubscription_);
+            events_.Unsubscribe<MemorySnapshot>(
+                "MEMORY", memorySubscription_);
+            events_.Unsubscribe<GpuSnapshot>(
+                "GPU", gpuSubscription_);
+            events_.Unsubscribe<ProcessSnapshot>(
+                "PROCESS", processSubscription_);
+            subscribed_ = false;
         }
 
         if (monitor_)
@@ -288,18 +428,22 @@ namespace Service
             monitor_.reset();
         }
 
-        if (!subscribed_)
-            return;
+        if (benchmark_)
+        {
+            benchmark_->Stop();
+            benchmark_.reset();
+        }
 
-        events_.Unsubscribe<CpuSnapshot>(
-            "CPU", cpuSubscription_);
-        events_.Unsubscribe<MemorySnapshot>(
-            "MEMORY", memorySubscription_);
-        events_.Unsubscribe<GpuSnapshot>(
-            "GPU", gpuSubscription_);
-        events_.Unsubscribe<ProcessSnapshot>(
-            "PROCESS", processSubscription_);
+        if (orchestrator_)
+        {
+            orchestrator_->Stop();
+            orchestrator_.reset();
+        }
 
-        subscribed_ = false;
+        if (frameProbe_)
+        {
+            frameProbe_->Stop();
+            frameProbe_.reset();
+        }
     }
 }

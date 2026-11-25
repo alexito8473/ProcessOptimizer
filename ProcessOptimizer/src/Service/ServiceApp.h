@@ -5,6 +5,8 @@
 #include "../Optimization/CpuTopology.h"
 #include "../Optimization/CpuOrchestrator.h"
 #include "../Optimization/CpuBenchmark.h"
+#include "../Optimization/FrameProbe.h"
+#include "../Monitoring/ProcessMonitor/ProcessInfo.h"
 #include "MonitorState.h"
 
 #include <atomic>
@@ -26,6 +28,11 @@ namespace Service
         bool Start();
         void Stop();
 
+        // Refina el PID observado: si el primer plano es un launcher,
+        // sigue al hijo (o al proceso con GPU real) sin tocar prioridades.
+        void UpdateFrameProbeTarget(
+            const ProcessSnapshot& snapshot);
+
         const MonitorState& State() const
         {
             return state_;
@@ -37,12 +44,14 @@ namespace Service
         std::unique_ptr<IPC::PipeServer> pipe_;
         std::unique_ptr<Optimization::CpuOrchestrator> orchestrator_;
         std::unique_ptr<Optimization::CpuBenchmark> benchmark_;
+        std::unique_ptr<Optimization::FrameProbe> frameProbe_;
         MonitorState state_;
 
         Optimization::TopologySnapshot topology_;
         Optimization::OptimizerState optimizer_;
 
         bool subscribed_ = false;
+        std::atomic<bool> stopping_{ false };
         std::atomic<bool> benchmarkResume_{ false };
         Optimization::OptimizerMode previousModeBeforeBenchmark_ =
             Optimization::OptimizerMode::Off;
@@ -50,6 +59,9 @@ namespace Service
         bool requestedOptimizerEnabled_ = false;
         Optimization::OptimizerMode requestedOptimizerMode_ =
             Optimization::OptimizerMode::Off;
+        std::mutex foregroundRequestMutex_;
+        DWORD requestedForegroundPid_ = 0;
+
         std::size_t cpuSubscription_ = 0;
         std::size_t memorySubscription_ = 0;
         std::size_t gpuSubscription_ = 0;

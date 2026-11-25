@@ -119,25 +119,24 @@ namespace IPC
         if (!running_.exchange(false))
             return;
 
-        HANDLE listen = listenPipe_;
+        HANDLE listen = listenPipe_.exchange(
+            INVALID_HANDLE_VALUE);
+
         if (listen != INVALID_HANDLE_VALUE)
         {
-            CloseHandle(listen);
-            listenPipe_ = INVALID_HANDLE_VALUE;
+            // AcceptLoop es el propietario del pipe de escucha y lo
+            // cierra al despertar. Aqui solo se cancela la espera.
+            CancelIoEx(listen, nullptr);
         }
 
-        std::vector<HANDLE> openClients;
+        // Cada ServeClient es el unico propietario de su handle: aqui
+        // solo se cancela la lectura bloqueante. Cerrarlo desde Stop
+        // provocaba un doble CloseHandle y cierre de handles reutilizados.
         {
             std::lock_guard<std::mutex> lock(clientsMutex_);
-            openClients.assign(
-                clients_.begin(), clients_.end());
-            clients_.clear();
+            for (HANDLE pipe : clients_)
+                CancelIoEx(pipe, nullptr);
         }
-
-        // Cerrar el pipe fuerza el retorno de ReadFile en los hilos
-        // de cliente que estuvieran esperando una peticion.
-        for (HANDLE pipe : openClients)
-            CloseHandle(pipe);
 
         if (acceptThread_.joinable())
             acceptThread_.join();
@@ -206,12 +205,20 @@ namespace IPC
 
             listenPipe_ = pipe;
 
+            if (!running_.load())
+            {
+                listenPipe_.exchange(INVALID_HANDLE_VALUE);
+                CloseHandle(pipe);
+                break;
+            }
+
             BOOL connected = ConnectNamedPipe(pipe, nullptr);
             if (!connected &&
                 GetLastError() != ERROR_PIPE_CONNECTED)
             {
+                // Unico propietario del handle: el propio AcceptLoop.
+                listenPipe_.exchange(INVALID_HANDLE_VALUE);
                 CloseHandle(pipe);
-                listenPipe_ = INVALID_HANDLE_VALUE;
 
                 if (running_.load())
                 {
@@ -221,7 +228,7 @@ namespace IPC
                 continue;
             }
 
-            listenPipe_ = INVALID_HANDLE_VALUE;
+            listenPipe_.exchange(INVALID_HANDLE_VALUE);
 
             if (!running_.load())
             {
@@ -492,6 +499,13 @@ namespace IPC
              header.version != ProtocolVersion ||
              header.type !=
                  static_cast<std::uint32_t>(expected)))
+        {
+            ok = false;
+        }
+
+        if (ok &&
+            header.payloadSize >
+                static_cast<std::uint32_t>(PipeBufferSize))
         {
             ok = false;
         }

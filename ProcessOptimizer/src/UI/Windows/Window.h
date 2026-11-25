@@ -108,7 +108,7 @@ private:
     void StopServiceClient();
     void ServiceClientLoop();
     void ApplyRemoteState(const IPC::State& state);
-    void ApplySavedOptimizerConfig(IPC::PipeClient& client);
+    bool ApplySavedOptimizerConfig(IPC::PipeClient& client);
     void SendForegroundProcess(IPC::PipeClient& client);
     bool IsInteractingWithUI() const;
     static constexpr wchar_t ClassName[] =
@@ -212,11 +212,13 @@ private:
     std::atomic<bool> clientThreadRunning_{ false };
     std::thread clientThread_;
     std::uint64_t lastRemoteSequence_ = 0;
+    bool forceApplyOnConnect_ = true;
 
     // Preferencia publicada por la pagina de optimizacion al hilo cliente,
     // para leerla sin acceder a themeSettings_ desde otro hilo.
     std::atomic<bool> optimizerEnabledPref_{ false };
     std::atomic<int> optimizerModePref_{ 0 };
     std::atomic<bool> optimizerConfigSent_{ false };
-    DWORD lastForegroundPid_ = 0;
+    // Centinela: obliga a enviar el primer PID (incluso 0) tras reconectar.
+    DWORD lastForegroundPid_ = 0xFFFFFFFFu;
 };

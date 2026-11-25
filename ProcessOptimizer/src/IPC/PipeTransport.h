@@ -43,7 +43,7 @@ namespace IPC
         StateProvider provider_;
         CommandHandler handler_;
         std::atomic<bool> running_{false};
-        HANDLE listenPipe_ = INVALID_HANDLE_VALUE;
+        std::atomic<HANDLE> listenPipe_{ INVALID_HANDLE_VALUE };
 
         std::mutex clientsMutex_;
         std::unordered_set<HANDLE> clients_;

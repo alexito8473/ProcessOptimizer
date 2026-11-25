@@ -1543,15 +1543,27 @@ void Window::ServiceClientLoop()
             if (!wasServiceMode || subscribed_)
                 StopMonitoring();
 
-            if (!optimizerConfigSent_.exchange(true))
-                ApplySavedOptimizerConfig(client);
+            if (!wasServiceMode)
+                forceApplyOnConnect_ = true;
+
+            // Solo marcar como enviado si el servicio confirmo el Ack.
+            if (forceApplyOnConnect_ ||
+                !optimizerConfigSent_.load())
+            {
+                if (ApplySavedOptimizerConfig(client))
+                    optimizerConfigSent_.store(true);
+            }
 
             SendForegroundProcess(client);
 
-            if (remote.sequence != lastRemoteSequence_)
+            // La secuencia del servicio vuelve a 0 tras reiniciarse:
+            // sin este flag la UI descartaria todos sus estados.
+            if (forceApplyOnConnect_ ||
+                remote.sequence != lastRemoteSequence_)
             {
                 ApplyRemoteState(remote);
                 lastRemoteSequence_ = remote.sequence;
+                forceApplyOnConnect_ = false;
             }
 
             // El servicio publica CPU cada 1 s; sondear mas rapido solo
@@ -1562,7 +1574,8 @@ void Window::ServiceClientLoop()
         }
 
         optimizerConfigSent_.store(false);
-        lastForegroundPid_ = 0;
+        forceApplyOnConnect_ = true;
+        lastForegroundPid_ = 0xFFFFFFFFu;
 
         if (serviceMode_.exchange(false))
             StartMonitoring();
@@ -1572,7 +1585,7 @@ void Window::ServiceClientLoop()
     }
 }
 
-void Window::ApplySavedOptimizerConfig(
+bool Window::ApplySavedOptimizerConfig(
     IPC::PipeClient& client)
 {
     const bool enabled = optimizerEnabledPref_.load();
@@ -1582,7 +1595,7 @@ void Window::ApplySavedOptimizerConfig(
         static_cast<Optimization::OptimizerMode>(
             (std::min)(2, (std::max)(0, modeValue)));
 
-    client.SetOptimizerConfig(
+    return client.SetOptimizerConfig(
         enabled && mode != Optimization::OptimizerMode::Off,
         mode);
 }

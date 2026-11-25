@@ -174,6 +174,21 @@ namespace UI::Localization
         BenchmarkScore,
         BenchmarkRequired,
 
+        FrameProbeTitle,
+        FrameProbeSubtitle,
+        FrameProbeHint,
+        FrameProbeNoData,
+        FrameProbeStable,
+        FrameProbeCapped,
+        FrameProbeGpuBound,
+        FrameProbeCpuBound,
+        FrameProbeUnstable,
+        FrameProbeMetrics,
+        FrameProbeDetails,
+        FrameProbePid,
+        FrameProbeAge,
+        FrameProbeStale,
+
         Count
     };
 

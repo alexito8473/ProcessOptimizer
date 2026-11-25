@@ -60,10 +60,10 @@ private:
     ID3D11RenderTargetView* previousRenderTarget_ = nullptr;
     ID3D11DepthStencilView* previousDepthStencil_ = nullptr;
 
-    D3D11_VIEWPORT previousViewports[
-        D3D11_VIEWPORT_AND_SCISSORRECT_MAX_INDEX]{};
+    D3D11_VIEWPORT previousViewports_[
+        D3D11_VIEWPORT_AND_SCISSORRECT_MAX_INDEX + 1]{};
 
-        UINT previousViewportCount_ = 0;
+    UINT previousViewportCount_ = 0;
 
         bool regionActive_ = false;
         bool initialized_ = false;
@@ -74,7 +74,4 @@ private:
 
         std::uint64_t lastDrawHash_ = 0;
         std::uint64_t presentCount_ = 0;
-
-        D3D11_VIEWPORT previousViewports_[
-            D3D11_VIEWPORT_AND_SCISSORRECT_MAX_INDEX]{};
 };

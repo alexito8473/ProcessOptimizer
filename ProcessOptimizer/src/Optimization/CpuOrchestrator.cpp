@@ -18,7 +18,6 @@ namespace Optimization
         constexpr int MaxChangesPerTick = 2;
         constexpr std::size_t MaxProcesses = 40;
         constexpr std::size_t MaxThreadsPerProcess = 4;
-        constexpr std::uint64_t FocusFreezeTicks = 3;
         constexpr std::uint8_t IslandConfirmTicks = 2;
 
         // Solo migrar si el nucleo nuevo es claramente mejor. Un cambio
@@ -269,18 +268,10 @@ namespace Optimization
         if (processId != 0)
             GetProcessStart(processId, start);
 
-        bool changed = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            changed =
-                foregroundProcessId_ != processId ||
-                foregroundStart100ns_ != start;
-
             foregroundProcessId_ = processId;
             foregroundStart100ns_ = start;
-
-            if (changed)
-                lastFocusChangeTick_ = tick_;
         }
         Publish();
     }
@@ -464,34 +455,6 @@ namespace Optimization
             return false;
 
         return sessionId != 0;
-    }
-
-    CpuOrchestrator::OriginalProcessState
-    CpuOrchestrator::EnsureProcessOriginal(
-        DWORD processId,
-        std::uint64_t startTime100ns,
-        HANDLE process)
-    {
-        const ProcessInstance key{ processId, startTime100ns };
-
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        const auto it = originalProcesses_.find(key);
-        if (it != originalProcesses_.end())
-            return it->second;
-
-        OriginalProcessState original;
-        original.startTime100ns = startTime100ns;
-
-        const DWORD priority = GetPriorityClass(process);
-        if (priority != 0)
-        {
-            original.priority = static_cast<int>(priority);
-            original.hasPriority = true;
-        }
-
-        originalProcesses_[key] = original;
-        return original;
     }
 
     CpuOrchestrator::OriginalThreadState
@@ -1055,7 +1018,6 @@ namespace Optimization
         DWORD foregroundPid = 0;
         std::uint64_t foregroundStart = 0;
         std::uint64_t currentTick = 0;
-        std::uint64_t lastFocusChange = 0;
         TopologySnapshot topology;
         CpuSnapshot cpu;
         ProcessSnapshot processes;
@@ -1066,7 +1028,6 @@ namespace Optimization
             foregroundPid = foregroundProcessId_;
             foregroundStart = foregroundStart100ns_;
             currentTick = tick_;
-            lastFocusChange = lastFocusChangeTick_;
             topology = topology_;
             cpu = cpuSnapshot_;
             processes = processSnapshot_;
@@ -1082,11 +1043,6 @@ namespace Optimization
         }
 
         CpuTopology::RefreshUsage(topology, cpu);
-
-        const bool focusFrozen =
-            currentTick >= lastFocusChange &&
-            currentTick - lastFocusChange <
-                FocusFreezeTicks;
 
         const CpuSetMap cpuSets = QueryCpuSetMap();
 
@@ -1195,13 +1151,9 @@ namespace Optimization
         // resto se dejan al planificador de Windows: moverlos era una
         // de las causas de caidas de frames.
         std::unordered_set<DWORD> sampledPids;
-        if (mode == OptimizerMode::Gaming)
+        if (mode == OptimizerMode::Multitasking)
         {
-            if (targetPid != 0)
-                sampledPids.insert(targetPid);
-        }
-        else
-        {
+            // Gaming no muestrea hilos del juego: Windows decide.
             for (DWORD pid : candidatePids)
                 sampledPids.insert(pid);
         }
@@ -1242,22 +1194,16 @@ namespace Optimization
         output.lastUpdateMs = static_cast<std::uint64_t>(
             GetTickCount64());
 
-        if (focusFrozen)
+        if (mode == OptimizerMode::Gaming)
         {
-            output.status =
-                "Estabilizando tras cambio de foco";
-        }
-        else if (mode == OptimizerMode::Gaming)
-        {
-            output.status =
-                targetPid != 0
-                    ? "Gaming: reparto suave por nucleo fisico"
-                    : "Gaming: sin carga, Windows decide";
+            // El estado real de la sonda se muestra en su propia tarjeta;
+            // aqui no afirmar que se esta midiendo si ETW no esta activo.
+            output.status = "Gaming: juego intacto, Windows decide";
         }
         else
         {
             output.status =
-                "Multitarea: reparto suave por nucleo fisico";
+                "Multitarea: solo procesos de segundo plano";
         }
 
         std::size_t bestFrequencyIndex = 0;
@@ -1366,14 +1312,20 @@ namespace Optimization
             plan.cpuUsagePercent = candidate.cpuUsagePercent;
             plan.gpuUsagePercent = candidate.gpuUsagePercent;
 
-            if (mode == OptimizerMode::Gaming && !isTarget)
+            const bool leaveAlone =
+                mode == OptimizerMode::Gaming ||
+                candidate.foreground;
+
+            if (leaveAlone)
             {
                 plan.currentPriority =
                     NORMAL_PRIORITY_CLASS;
                 plan.targetPriority =
                     NORMAL_PRIORITY_CLASS;
                 plan.decision =
-                    "sin interferencia: Windows decide";
+                    mode == OptimizerMode::Gaming
+                        ? "juego intacto: sin CPU Sets ni prioridades"
+                        : "primer plano intacto: Windows decide";
                 output.processes.push_back(plan);
                 continue;
             }
@@ -1510,7 +1462,7 @@ namespace Optimization
                             currentTick - decision.changedTick >=
                                 CooldownTicks;
 
-                        if (focusFrozen || !cooledDown ||
+                        if (!cooledDown ||
                             chosenScore + CoreMoveThreshold >=
                                 currentScore)
                         {
@@ -1620,7 +1572,7 @@ namespace Optimization
 
                     if (needsChange)
                     {
-                        bool allowed = !focusFrozen;
+                        bool allowed = true;
                         {
                             std::lock_guard<std::mutex> lock(mutex_);
                             const auto lastIt =
@@ -1844,12 +1796,7 @@ namespace Optimization
 
                     threadPlan.verified = verified;
 
-                    if (focusFrozen)
-                    {
-                        threadPlan.reason =
-                            "congelado tras cambio de foco";
-                    }
-                    else if (useCpuSets)
+                    if (useCpuSets)
                     {
                         threadPlan.reason =
                             "CPU Set blando: nucleo fisico "
@@ -1871,11 +1818,7 @@ namespace Optimization
             }
 
             plan.decision =
-                isTarget
-                    ? "nucleos fisicos suaves para el foco"
-                    : (mode == OptimizerMode::Gaming
-                           ? "sin interferencia"
-                           : "reparto suave por nucleo fisico");
+                "CPU Sets blandos solo en segundo plano";
 
             plan.threadCount =
                 static_cast<DWORD>(plan.threads.size());

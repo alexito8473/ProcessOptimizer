@@ -240,12 +240,22 @@ namespace Service
         // vea como vacio un perfil que ya fue medido y guardado.
         const Optimization::BenchmarkState previousBenchmark =
             state_.optimizer.benchmark;
+        const Optimization::FrameProbeSnapshot previousFrameProbe =
+            state_.optimizer.frameProbe;
 
         state_.optimizer = optimizer;
         if (!state_.optimizer.benchmark.profile.HasData() &&
             previousBenchmark.profile.HasData())
         {
             state_.optimizer.benchmark = previousBenchmark;
+        }
+
+        // La sonda publica fuera del orquestador. Conservar el ultimo
+        // resultado evita que un tick del orquestador borre la medicion.
+        if (!state_.optimizer.frameProbe.active &&
+            previousFrameProbe.active)
+        {
+            state_.optimizer.frameProbe = previousFrameProbe;
         }
 
         state_.hasOptimizer = true;
@@ -261,6 +271,19 @@ namespace Service
         std::lock_guard<std::mutex> lock(mutex_);
 
         state_.optimizer.benchmark = benchmark;
+        state_.hasOptimizer = true;
+        state_.changedMask = ChangeMask::Optimization;
+        ++state_.sequence;
+        state_.timestampMs = NowMs();
+        return ChangeMask::Optimization;
+    }
+
+    std::uint32_t MonitorState::SetFrameProbe(
+        const Optimization::FrameProbeSnapshot& frameProbe)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        state_.optimizer.frameProbe = frameProbe;
         state_.hasOptimizer = true;
         state_.changedMask = ChangeMask::Optimization;
         ++state_.sequence;
@@ -294,6 +317,11 @@ namespace Service
     {
         std::lock_guard<std::mutex> lock(mutex_);
         state_ = state;
+
+        // La cache se publica a los clientes del pipe: debe regenerarse
+        // aunque la secuencia del estado reemplazado sea la misma.
+        cachedState_.reset();
+        cachedSequence_ = 0;
     }
 
     void MonitorState::AppendCpuHistory(

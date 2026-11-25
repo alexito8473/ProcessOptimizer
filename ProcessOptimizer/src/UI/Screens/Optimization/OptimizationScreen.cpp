@@ -15,6 +15,7 @@ namespace UI::Screens::Optimization
         using Text = UI::Localization::Text;
         using ::Optimization::BenchmarkStatus;
         using ::Optimization::CoreClass;
+        using ::Optimization::FrameVerdict;
         using ::Optimization::OptimizerMode;
         using ::Optimization::PlanStatus;
         using ::Optimization::TopologyKind;
@@ -24,6 +25,28 @@ namespace UI::Screens::Optimization
             Text text)
         {
             return UI::Localization::Translate(language, text);
+        }
+
+        Text VerdictText(FrameVerdict verdict)
+        {
+            switch (verdict)
+            {
+            case FrameVerdict::Stable:
+                return Text::FrameProbeStable;
+            case FrameVerdict::Capped:
+                return Text::FrameProbeCapped;
+            case FrameVerdict::GpuBound:
+                return Text::FrameProbeGpuBound;
+            case FrameVerdict::CpuBound:
+                return Text::FrameProbeCpuBound;
+            case FrameVerdict::Unstable:
+                return Text::FrameProbeUnstable;
+            case FrameVerdict::Unavailable:
+                return Text::FrameProbeStale;
+            case FrameVerdict::NoData:
+            default:
+                return Text::FrameProbeNoData;
+            }
         }
 
         std::string ToUtf8(const std::wstring& value)
@@ -238,6 +261,117 @@ namespace UI::Screens::Optimization
                 UI::Widgets::MutedText(
                     T(language, Text::OptimizationSavedNote),
                     palette);
+            }
+
+            UI::Widgets::EndCard();
+        }
+
+        void RenderFrameProbe(
+            const ::Optimization::OptimizerState& optimizer,
+            const UI::Theme::UiPalette& palette,
+            UI::Localization::Language language,
+            bool serviceConnected)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::FrameProbeTitle),
+                T(language, Text::FrameProbeSubtitle),
+                palette);
+
+            UI::Widgets::BeginCard(
+                "OptimizerFrameProbe", 0.0f, palette);
+
+            if (!serviceConnected)
+            {
+                UI::Widgets::Badge(
+                    T(language, Text::OptimizationServiceRequired),
+                    palette.Warning,
+                    palette);
+                UI::Widgets::EndCard();
+                return;
+            }
+
+            const ::Optimization::FrameProbeSnapshot& probe =
+                optimizer.frameProbe;
+
+            const std::uint64_t now = GetTickCount64();
+            const std::uint64_t age =
+                probe.lastUpdateMs != 0 &&
+                        now >= probe.lastUpdateMs
+                    ? now - probe.lastUpdateMs
+                    : 0;
+            const bool stale =
+                probe.active &&
+                (probe.lastUpdateMs == 0 || age > 3000);
+
+            if (!probe.active || probe.sampleCount == 0 || stale)
+            {
+                UI::Widgets::MutedText(
+                    T(
+                        language,
+                        stale && probe.active
+                            ? Text::FrameProbeStale
+                            : Text::FrameProbeHint),
+                    palette);
+                UI::Widgets::EndCard();
+                return;
+            }
+
+            ImVec4 verdictColor = palette.Accent;
+            switch (probe.verdict)
+            {
+            case FrameVerdict::Stable:
+                verdictColor = palette.Success;
+                break;
+            case FrameVerdict::Capped:
+            case FrameVerdict::GpuBound:
+                verdictColor = palette.Warning;
+                break;
+            case FrameVerdict::CpuBound:
+            case FrameVerdict::Unstable:
+            case FrameVerdict::Unavailable:
+                verdictColor = palette.Danger;
+                break;
+            case FrameVerdict::NoData:
+            default:
+                verdictColor = palette.TextMuted;
+                break;
+            }
+
+            // El sufijo ## fija el ID de ImGui aunque cambie el texto.
+            std::string verdictLabel =
+                T(language, VerdictText(probe.verdict));
+            verdictLabel += "##FrameProbeVerdict";
+
+            UI::Widgets::Badge(
+                verdictLabel.c_str(), verdictColor, palette);
+
+            ImGui::Spacing();
+            ImGui::Text(
+                T(language, Text::FrameProbeMetrics),
+                probe.fps,
+                probe.p50Ms,
+                probe.p95Ms,
+                probe.p99Ms);
+
+            ImGui::Text(
+                T(language, Text::FrameProbeDetails),
+                probe.sampleCount,
+                probe.maxMs,
+                probe.syncInterval,
+                probe.avgCpuInPresentMs);
+
+            if (probe.lastUpdateMs != 0)
+            {
+                ImGui::Text(
+                    T(language, Text::FrameProbePid),
+                    static_cast<unsigned long>(probe.processId),
+                    static_cast<unsigned long long>(age / 1000));
+            }
+            else
+            {
+                ImGui::Text(
+                    T(language, Text::FrameProbeAge),
+                    static_cast<unsigned long>(probe.processId));
             }
 
             UI::Widgets::EndCard();
@@ -894,6 +1028,12 @@ namespace UI::Screens::Optimization
             optimizer,
             serviceConnected,
             command);
+
+        RenderFrameProbe(
+            optimizer,
+            palette,
+            language,
+            serviceConnected);
 
         RenderBenchmark(
             optimizer,
