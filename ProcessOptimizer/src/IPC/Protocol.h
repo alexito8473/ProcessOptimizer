@@ -21,7 +21,7 @@ namespace IPC
     inline constexpr wchar_t PipeName[] =
         L"\\\\.\\pipe\\ProcessOptimizer.Monitor";
     inline constexpr std::uint32_t ProtocolMagic = 0x504F4D31; // "POM1"
-    inline constexpr std::uint32_t ProtocolVersion = 3;
+    inline constexpr std::uint32_t ProtocolVersion = 4;
 
     enum class Request : std::uint32_t
     {
@@ -878,6 +878,12 @@ namespace IPC
             w.Pod(v.efficiencyClass);
             WriteEnum(w, v.coreClass);
             w.Pod(v.usagePercent);
+            w.Bool(v.frequencyAvailable);
+            w.Bool(v.parked);
+            w.Pod(v.maxMHz);
+            w.Pod(v.currentMHz);
+            w.Pod(v.mhzLimitMHz);
+            w.Pod(v.currentIdleState);
         }
         inline bool Read(Reader& r, Optimization::TopologyProcessor& v)
         {
@@ -890,7 +896,13 @@ namespace IPC
                    r.Pod(v.l3CacheId) &&
                    r.Pod(v.efficiencyClass) &&
                    ReadEnum(r, v.coreClass) &&
-                   r.Pod(v.usagePercent);
+                   r.Pod(v.usagePercent) &&
+                   r.Bool(v.frequencyAvailable) &&
+                   r.Bool(v.parked) &&
+                   r.Pod(v.maxMHz) &&
+                   r.Pod(v.currentMHz) &&
+                   r.Pod(v.mhzLimitMHz) &&
+                   r.Pod(v.currentIdleState);
         }
 
         inline void Write(Writer& w, const Optimization::TopologyCore& v)
@@ -1030,6 +1042,11 @@ namespace IPC
             w.Pod(v.l3CacheId);
             w.Pod(v.usagePercent);
             w.Pod(v.threadCount);
+            w.Bool(v.frequencyAvailable);
+            w.Bool(v.bestFrequency);
+            w.Pod(v.maxMHz);
+            w.Pod(v.currentMHz);
+            w.Pod(v.mhzLimitMHz);
             w.Str(v.reason);
         }
         inline bool Read(Reader& r, Optimization::CoreAssignment& v)
@@ -1042,6 +1059,11 @@ namespace IPC
                    r.Pod(v.l3CacheId) &&
                    r.Pod(v.usagePercent) &&
                    r.Pod(v.threadCount) &&
+                   r.Bool(v.frequencyAvailable) &&
+                   r.Bool(v.bestFrequency) &&
+                   r.Pod(v.maxMHz) &&
+                   r.Pod(v.currentMHz) &&
+                   r.Pod(v.mhzLimitMHz) &&
                    r.Str(v.reason);
         }
 

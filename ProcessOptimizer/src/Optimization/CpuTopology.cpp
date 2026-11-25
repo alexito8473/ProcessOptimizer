@@ -1,16 +1,33 @@
 #include "CpuTopology.h"
 
+#include <PowrProf.h>
+
 #include <algorithm>
 #include <functional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#pragma comment(lib, "PowrProf.lib")
+
 namespace Optimization
 {
     namespace
     {
         constexpr BYTE InvalidEfficiencyClass = 0xFF;
+
+        // PROCESSOR_POWER_INFORMATION no viene en el SDK de usuario
+        // instalado, pero la ABI de CallNtPowerInformation es estable:
+        // seis ULONG en este orden (24 bytes).
+        struct ProcessorPowerInformation
+        {
+            ULONG Number = 0;
+            ULONG MaxMhz = 0;
+            ULONG CurrentMhz = 0;
+            ULONG MhzLimit = 0;
+            ULONG MaxIdleState = 0;
+            ULONG CurrentIdleState = 0;
+        };
 
         std::uint32_t ProcessorKey(WORD group, BYTE logicalIndex)
         {
@@ -104,6 +121,97 @@ namespace Optimization
 
                     callback(affinity.Group, logicalIndex);
                 }
+            }
+        }
+
+        // CallNtPowerInformation devuelve una entrada por procesador logico
+        // del sistema. El "Number" de PROCESSOR_POWER_INFORMATION no es un
+        // indice del vector de topologia ni un PROCESSOR_NUMBER de grupo:
+        // se usa el ordinal global calculado a partir de grupo + indice.
+        void ApplyProcessorPower(TopologySnapshot& topology)
+        {
+            if (topology.processors.empty())
+                return;
+
+            const DWORD count =
+                GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+
+            if (count == 0 || count < topology.processors.size())
+                return;
+
+            std::vector<DWORD> groupCounts(
+                static_cast<std::size_t>(topology.groupCount) + 1, 0);
+
+            for (const TopologyProcessor& processor :
+                 topology.processors)
+            {
+                if (processor.group >= groupCounts.size())
+                    continue;
+
+                ++groupCounts[processor.group];
+            }
+
+            std::vector<DWORD> groupBase(groupCounts.size(), 0);
+            for (std::size_t i = 1; i < groupCounts.size(); ++i)
+                groupBase[i] = groupBase[i - 1] + groupCounts[i - 1];
+
+            std::vector<DWORD> ordinals(
+                topology.processors.size(), 0);
+
+            for (std::size_t i = 0;
+                 i < topology.processors.size();
+                 ++i)
+            {
+                const WORD group = topology.processors[i].group;
+                if (group >= groupBase.size())
+                    continue;
+
+                ordinals[i] =
+                    groupBase[group] +
+                    topology.processors[i].logicalIndex;
+            }
+
+            std::vector<ProcessorPowerInformation> power(count);
+            const NTSTATUS status = CallNtPowerInformation(
+                ProcessorInformation,
+                nullptr,
+                0,
+                power.data(),
+                static_cast<ULONG>(
+                    power.size() * sizeof(power[0])));
+
+            if (status != 0)
+                return;
+
+            for (std::size_t i = 0;
+                 i < topology.processors.size();
+                 ++i)
+            {
+                if (ordinals[i] >= count)
+                    continue;
+
+                const ProcessorPowerInformation& info =
+                    power[ordinals[i]];
+
+                TopologyProcessor& processor =
+                    topology.processors[i];
+
+                processor.frequencyAvailable = true;
+                processor.maxMHz =
+                    static_cast<double>(info.MaxMhz);
+                processor.currentMHz =
+                    static_cast<double>(info.CurrentMhz);
+                processor.mhzLimitMHz =
+                    static_cast<double>(info.MhzLimit);
+                processor.currentIdleState =
+                    info.CurrentIdleState;
+
+                // No marcar como aparcado solo por un idle state alto:
+                // algunos equipos siguen informando la frecuencia maxima.
+                processor.parked =
+                    info.MaxMhz == 0 ||
+                    (info.CurrentMhz == 0 &&
+                     info.MhzLimit == 0);
             }
         }
 
@@ -385,6 +493,8 @@ namespace Optimization
             core.l2CacheId = processor.l2CacheId;
             core.l3CacheId = processor.l3CacheId;
         }
+
+        ApplyProcessorPower(topology);
 
         topology.available = true;
         return topology;

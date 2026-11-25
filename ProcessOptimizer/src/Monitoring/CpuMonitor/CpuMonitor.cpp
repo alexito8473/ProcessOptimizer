@@ -869,6 +869,21 @@ bool CpuMonitor::UpdateMaximumFrequencyCounter()
 
     const double maximumFrequency = value.doubleValue;
 
+    snapshot_.frequency.maximumFrequencyPercent =
+        maximumFrequency;
+
+    // "Processor Frequency" ya es una medida en MHz; no volver a
+    // multiplicarla por % Processor Performance. effectiveMHz queda
+    // como lectura real y estimatedMHz como estimacion relativa.
+    if (maximumFrequency > 0.0 &&
+        snapshot_.frequency.baseMHz > 0)
+    {
+        snapshot_.frequency.effectiveMHz =
+            static_cast<double>(
+                snapshot_.frequency.baseMHz) *
+            maximumFrequency / 100.0;
+    }
+
 #ifdef _DEBUG
     wchar_t debugText[128]{};
 

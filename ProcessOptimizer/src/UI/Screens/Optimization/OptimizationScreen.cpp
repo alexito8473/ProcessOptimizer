@@ -314,6 +314,9 @@ namespace UI::Screens::Optimization
                  topology.processors)
             {
                 std::uint32_t assignedThreads = 0;
+                bool bestFrequency = false;
+                double maxMHz = processor.maxMHz;
+                double currentMHz = processor.currentMHz;
 
                 for (const ::Optimization::CoreAssignment& assignment :
                      optimizer.cores)
@@ -324,6 +327,10 @@ namespace UI::Screens::Optimization
                     {
                         assignedThreads =
                             assignment.threadCount;
+                        bestFrequency =
+                            assignment.bestFrequency;
+                        maxMHz = assignment.maxMHz;
+                        currentMHz = assignment.currentMHz;
                         break;
                     }
                 }
@@ -353,15 +360,35 @@ namespace UI::Screens::Optimization
 
                 if (ImGui::IsItemHovered())
                 {
-                    char detail[192]{};
-                    std::snprintf(
-                        detail,
-                        sizeof(detail),
-                        "L2 %u | L3 %u | NUMA %u | hilos %u",
-                        processor.l2CacheId,
-                        processor.l3CacheId,
-                        processor.numaNode,
-                        assignedThreads);
+                    char detail[256]{};
+                    if (processor.frequencyAvailable)
+                    {
+                        std::snprintf(
+                            detail,
+                            sizeof(detail),
+                            "L2 %u | L3 %u | NUMA %u | hilos %u\n"
+                            "max %.0f MHz | actual %.0f MHz%s",
+                            processor.l2CacheId,
+                            processor.l3CacheId,
+                            processor.numaNode,
+                            assignedThreads,
+                            maxMHz,
+                            currentMHz,
+                            bestFrequency
+                                ? " | mejor frecuencia"
+                                : "");
+                    }
+                    else
+                    {
+                        std::snprintf(
+                            detail,
+                            sizeof(detail),
+                            "L2 %u | L3 %u | NUMA %u | hilos %u",
+                            processor.l2CacheId,
+                            processor.l3CacheId,
+                            processor.numaNode,
+                            assignedThreads);
+                    }
                     ImGui::SetTooltip("%s", detail);
                 }
 

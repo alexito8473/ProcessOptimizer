@@ -13,6 +13,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace Optimization
@@ -52,6 +53,74 @@ namespace Optimization
             std::uint64_t startTime100ns = 0;
         };
 
+        // Un PID o un TID suelto NO identifica una instancia: Windows los
+        // reutiliza. Todas las claves persistentes incluyen el tiempo de
+        // creacion del proceso y, para hilos, el del propio hilo.
+        struct ProcessInstance
+        {
+            DWORD processId = 0;
+            std::uint64_t startTime100ns = 0;
+
+            bool operator==(const ProcessInstance& other) const
+            {
+                return processId == other.processId &&
+                       startTime100ns == other.startTime100ns;
+            }
+        };
+
+        struct ProcessInstanceHash
+        {
+            std::size_t operator()(const ProcessInstance& key) const
+            {
+                return std::hash<std::uint64_t>()(
+                    (static_cast<std::uint64_t>(key.processId) << 32) ^
+                    key.startTime100ns ^
+                    (key.startTime100ns >> 32));
+            }
+        };
+
+        struct ThreadInstance
+        {
+            DWORD processId = 0;
+            std::uint64_t processStart100ns = 0;
+            DWORD threadId = 0;
+            std::uint64_t threadStart100ns = 0;
+
+            bool operator==(const ThreadInstance& other) const
+            {
+                return processId == other.processId &&
+                       processStart100ns ==
+                           other.processStart100ns &&
+                       threadId == other.threadId &&
+                       threadStart100ns ==
+                           other.threadStart100ns;
+            }
+        };
+
+        struct ThreadInstanceHash
+        {
+            std::size_t operator()(const ThreadInstance& key) const
+            {
+                std::uint64_t value =
+                    (static_cast<std::uint64_t>(key.processId)
+                         << 32) ^
+                    key.processStart100ns ^
+                    (key.processStart100ns >> 13) ^
+                    (static_cast<std::uint64_t>(key.threadId)
+                         << 17) ^
+                    key.threadStart100ns ^
+                    (key.threadStart100ns >> 29);
+
+                return std::hash<std::uint64_t>()(value);
+            }
+        };
+
+        struct PendingIsland
+        {
+            std::uint16_t island = 0;
+            std::uint8_t confirmations = 0;
+        };
+
         struct OriginalProcessState
         {
             std::uint64_t startTime100ns = 0;
@@ -74,6 +143,7 @@ namespace Optimization
         struct Candidate
         {
             DWORD processId = 0;
+            std::uint64_t startTime100ns = 0;
             std::wstring name;
             double cpuUsagePercent = 0.0;
             double gpuUsagePercent = 0.0;
@@ -87,14 +157,17 @@ namespace Optimization
         void RestoreAll();
 
         bool RestoreThread(
-            std::uint64_t threadKey,
+            const ThreadInstance& thread,
             const OriginalThreadState& original);
         bool RestoreProcess(
-            DWORD processId,
+            const ProcessInstance& process,
             const OriginalProcessState& original);
 
         bool GetProcessStart(
             DWORD processId,
+            std::uint64_t& startTime100ns) const;
+        bool GetThreadStart(
+            DWORD threadId,
             std::uint64_t& startTime100ns) const;
         bool IsCritical(const std::wstring& name) const;
         bool IsUserSession(DWORD processId) const;
@@ -105,8 +178,9 @@ namespace Optimization
             HANDLE process);
         OriginalThreadState EnsureThreadOriginal(
             DWORD processId,
+            std::uint64_t processStart100ns,
             DWORD threadId,
-            std::uint64_t startTime100ns,
+            std::uint64_t threadStart100ns,
             HANDLE thread);
 
         std::uint16_t ChooseIsland(
@@ -150,12 +224,26 @@ namespace Optimization
         std::uint64_t tick_ = 0;
 
         std::unordered_map<
-            std::uint32_t, OriginalProcessState> originalProcesses_;
+            ProcessInstance,
+            OriginalProcessState,
+            ProcessInstanceHash> originalProcesses_;
         std::unordered_map<
-            std::uint64_t, OriginalThreadState> originalThreads_;
+            ThreadInstance,
+            OriginalThreadState,
+            ThreadInstanceHash> originalThreads_;
         std::unordered_map<
-            std::uint64_t, std::uint64_t> threadLastChange_;
+            ThreadInstance,
+            std::uint64_t,
+            ThreadInstanceHash> threadLastChange_;
         std::unordered_map<
-            std::uint64_t, std::uint16_t> processIslands_;
+            ProcessInstance,
+            std::uint16_t,
+            ProcessInstanceHash> processIslands_;
+        std::unordered_map<
+            ProcessInstance,
+            PendingIsland,
+            ProcessInstanceHash> pendingIslands_;
+        std::uint64_t foregroundStart100ns_ = 0;
+        std::uint64_t lastFocusChangeTick_ = 0;
     };
 }

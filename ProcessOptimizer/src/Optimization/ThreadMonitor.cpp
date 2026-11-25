@@ -9,13 +9,6 @@ namespace Optimization
 {
     namespace
     {
-        std::uint64_t Key(DWORD processId, DWORD threadId)
-        {
-            return
-                (static_cast<std::uint64_t>(processId) << 32) |
-                static_cast<std::uint64_t>(threadId);
-        }
-
         std::uint64_t FileTimeTo100ns(const FILETIME& value)
         {
             return
@@ -59,7 +52,7 @@ namespace Optimization
         if (snapshot == INVALID_HANDLE_VALUE)
             return result;
 
-        std::unordered_set<std::uint64_t> seen;
+        std::unordered_set<SampleKey, SampleKeyHash> seen;
 
         THREADENTRY32 entry{};
         entry.dwSize = sizeof(entry);
@@ -97,16 +90,20 @@ namespace Optimization
                 if (!ok)
                     continue;
 
-                const std::uint64_t key =
-                    Key(
-                        entry.th32OwnerProcessID,
-                        entry.th32ThreadID);
+                const std::uint64_t start =
+                    FileTimeTo100ns(creation);
+
+                const SampleKey key{
+                    entry.th32OwnerProcessID,
+                    entry.th32ThreadID,
+                    start };
 
                 seen.insert(key);
 
                 ThreadLoad sample;
                 sample.processId = entry.th32OwnerProcessID;
                 sample.threadId = entry.th32ThreadID;
+                sample.start100ns = start;
                 sample.cpuTime100ns =
                     FileTimeTo100ns(kernel) +
                     FileTimeTo100ns(user);

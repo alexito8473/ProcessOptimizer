@@ -57,6 +57,15 @@ namespace Optimization
         BYTE efficiencyClass = 0;
         CoreClass coreClass = CoreClass::Unknown;
         double usagePercent = 0.0;
+
+        // Frecuencia real informada por CallNtPowerInformation.
+        // frequencyAvailable=false significa que 0 MHz no es una lectura.
+        bool frequencyAvailable = false;
+        bool parked = false;
+        double maxMHz = 0.0;
+        double currentMHz = 0.0;
+        double mhzLimitMHz = 0.0;
+        std::uint32_t currentIdleState = 0;
     };
 
     struct TopologyCore
@@ -144,6 +153,13 @@ namespace Optimization
         std::uint16_t l3CacheId = 0;
         double usagePercent = 0.0;
         DWORD threadCount = 0;
+
+        bool frequencyAvailable = false;
+        bool bestFrequency = false;
+        double maxMHz = 0.0;
+        double currentMHz = 0.0;
+        double mhzLimitMHz = 0.0;
+
         std::string reason;
     };
 
