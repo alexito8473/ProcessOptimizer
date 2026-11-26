@@ -6,6 +6,9 @@ int WINAPI wWinMain(
     PWSTR,
     int)
 {
+    SetProcessDpiAwarenessContext(
+        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
     // El instalador usa AppMutex=ProcessOptimizerSetup para cerrar el Tray
     // antes de reemplazar los binarios.
     HANDLE installerMutex = CreateMutexW(

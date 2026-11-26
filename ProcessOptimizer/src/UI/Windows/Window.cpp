@@ -1610,6 +1610,23 @@ LRESULT CALLBACK Window::WindowProc(
         return 0;
     }
 
+    case WM_DPICHANGED:
+    {
+        const RECT* suggested =
+            reinterpret_cast<const RECT*>(lParam);
+
+        SetWindowPos(
+            hwnd,
+            nullptr,
+            suggested->left,
+            suggested->top,
+            suggested->right - suggested->left,
+            suggested->bottom - suggested->top,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+
+        return 0;
+    }
+
     // Entrada del usuario: solicitar redibujado a 60 FPS.
     case WM_MOUSEMOVE:
     case WM_MOUSEWHEEL:

@@ -13,6 +13,11 @@ int WINAPI wWinMain(
     PWSTR,
     int nCmdShow)
 {
+    // Evita que Windows escale la ventana por DPI: en pantallas completas
+    // esa virtualizacion deformaba la UI.
+    SetProcessDpiAwarenessContext(
+        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
     // Inno Setup cierra la UI durante una actualizacion si encuentra este
     // mutex; sin el, el EXE puede quedar bloqueado y la instalacion fallar.
     HANDLE installerMutex = CreateMutexW(
