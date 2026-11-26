@@ -81,6 +81,7 @@ namespace Service
         DWORD resolvedGamePid_ = 0;
 
         std::atomic<bool> managementRunning_{ false };
+        std::atomic<bool> autoCalibrateRequested_{ false };
         std::thread managementThread_;
 
         std::size_t cpuSubscription_ = 0;

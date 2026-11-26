@@ -259,6 +259,30 @@ namespace UI::Screens::Optimization
                     optimizer.status.c_str(), palette);
             }
 
+            if (settings.optimizerEnabled)
+            {
+                ImGui::Spacing();
+                if (optimizer.ab.running)
+                {
+                    ImGui::ProgressBar(
+                        static_cast<float>(
+                            optimizer.ab.progressPercent) / 100.0f,
+                        ImVec2(-1.0f, 0.0f),
+                        optimizer.ab.phase.c_str());
+                }
+                else if (optimizer.ab.completed)
+                {
+                    UI::Widgets::MutedText(
+                        optimizer.ab.verdict.c_str(), palette);
+                }
+                else
+                {
+                    UI::Widgets::MutedText(
+                        "Calibrando automaticamente...",
+                        palette);
+                }
+            }
+
             ImGui::Spacing();
 
             if (!serviceConnected)
@@ -1572,13 +1596,18 @@ namespace UI::Screens::Optimization
             T(language, Text::AdvancedTitle),
             nullptr, palette);
 
-        RenderAb(
-            optimizer,
-            palette,
-            language,
-            serviceConnected,
-            command,
-            serviceIssue);
+        if (ImGui::CollapsingHeader(
+                T(language, Text::AdvancedTitle),
+                ImGuiTreeNodeFlags_None))
+        {
+            RenderAb(
+                optimizer,
+                palette,
+                language,
+                serviceConnected,
+                command,
+                serviceIssue);
+        }
 
         RenderContainment(
             optimizer,

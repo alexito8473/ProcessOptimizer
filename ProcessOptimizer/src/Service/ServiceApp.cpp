@@ -269,8 +269,13 @@ namespace Service
                     if (!wantsEnabled)
                     {
                         orchestrator_->SetEnabled(false);
+                        autoCalibrateRequested_.store(false);
+                        if (ab_)
+                            ab_->Stop();
                         return true;
                     }
+
+                    autoCalibrateRequested_.store(true);
 
                     if (!orchestrator_->HasBenchmarkProfile())
                     {
@@ -623,6 +628,25 @@ namespace Service
                 stutter_->Tick(frame);
             if (ab_)
                 ab_->Tick();
+
+            // Auto-calibracion: cuando Balanceado se activa, el servicio
+            // corre A/B solo una vez, sin intervencion del usuario.
+            if (autoCalibrateRequested_.load() && ab_ &&
+                orchestrator_->State().enabled &&
+                orchestrator_->State().mode !=
+                    Optimization::OptimizerMode::Off)
+            {
+                const auto abState = ab_->Snapshot();
+                if (!abState.running && !abState.completed &&
+                    orchestrator_->HasBenchmarkProfile() &&
+                    frameProbe_)
+                {
+                    ab_->Start(20, true, frameProbe_.get(),
+                               energy_.get());
+                }
+                if (ab_->Snapshot().completed)
+                    autoCalibrateRequested_.store(false);
+            }
 
             if (containment_)
             {
