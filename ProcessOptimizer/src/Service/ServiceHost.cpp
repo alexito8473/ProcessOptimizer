@@ -115,7 +115,16 @@ namespace Service
             wchar_t path[MAX_PATH]{};
             const DWORD size = GetModuleFileNameW(
                 nullptr, path, MAX_PATH);
-            return std::wstring(path, size);
+            std::wstring result(path, size);
+
+            // CreateServiceW necesita la ruta entre comillas si el
+            // directorio tiene espacios (Program Files).
+            if (result.find(L' ') != std::wstring::npos &&
+                (result.empty() || result.front() != L'"'))
+            {
+                result = L"\"" + result + L"\"";
+            }
+            return result;
         }
 
         bool HasArgument(int argc, wchar_t** argv,
