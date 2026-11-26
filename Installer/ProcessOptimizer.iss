@@ -7,15 +7,15 @@ OutputBaseFilename=ProcessOptimizer-Setup
 ArchitecturesInstallIn64BitMode=x64
 Compression=lzma
 SolidCompression=yes
-CloseApplications=yes
+CloseApplications=force
 PrivilegesRequired=admin
 AppMutex=ProcessOptimizerSetup
 SetupIconFile=..\ProcessOptimizer\Assets\logo.ico
 
 [Files]
-Source: "..\ProcessOptimizer\x64\Release\ProcessOptimizer.Service.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\ProcessOptimizer\x64\Release\ProcessOptimizer.UI.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\ProcessOptimizer\x64\Release\ProcessOptimizer.Tray.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\x64\Release\ProcessOptimizer.Service.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\x64\Release\ProcessOptimizer.UI.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\x64\Release\ProcessOptimizer.Tray.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\ProcessOptimizer\Assets\logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\ProcessOptimizer\Assets\logo.png"; DestDir: "{app}"; Flags: ignoreversion
 Source: "VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
@@ -71,9 +71,7 @@ var
   ResultCode: Integer;
   I: Integer;
 begin
-  if not ServiceIsBusy() then
-    Exit;
-
+  // Primero pedir parada ordenada al SCM si el servicio esta activo.
   if ServiceHasState('RUNNING') or
      ServiceHasState('START_PENDING') then
   begin
@@ -83,16 +81,32 @@ begin
       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 
+  // El servicio puede haber quedado en STOPPED con el proceso aun vivo.
+  // Matarlo por nombre libera el EXE antes de copiar los nuevos binarios.
+  Exec(
+    ExpandConstant('{sys}\taskkill.exe'),
+    '/F /IM ProcessOptimizer.Service.exe',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(
+    ExpandConstant('{sys}\taskkill.exe'),
+    '/F /IM ProcessOptimizer.UI.exe',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(
+    ExpandConstant('{sys}\taskkill.exe'),
+    '/F /IM ProcessOptimizer.Tray.exe',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(
+    ExpandConstant('{sys}\taskkill.exe'),
+    '/F /IM ProcessOptimizer.exe',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  // Esperar a que el SCM y los procesos terminen de soltar los archivos.
   for I := 0 to 39 do
   begin
     if not ServiceIsBusy() then
       Exit;
     Sleep(250);
   end;
-
-  RaiseException(
-    'No se pudo detener ' + ServiceName + '. ' +
-    'Cierra ProcessOptimizer y vuelve a intentarlo.');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
