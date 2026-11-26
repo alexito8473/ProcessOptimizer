@@ -372,25 +372,40 @@ namespace UI::Screens::Optimization
                 probe.p95Ms,
                 probe.p99Ms);
 
-            ImGui::Text(
-                T(language, Text::FrameProbeDetails),
-                probe.sampleCount,
-                probe.maxMs,
-                probe.syncInterval,
-                probe.avgCpuInPresentMs);
+            static bool showDetails = false;
 
-            if (probe.lastUpdateMs != 0)
+            ImGui::Spacing();
+            if (UI::Widgets::SecondaryButton(
+                    T(language, showDetails
+                        ? Text::FrameProbeHideDetails
+                        : Text::FrameProbeShowDetails),
+                    palette))
             {
-                ImGui::Text(
-                    T(language, Text::FrameProbePid),
-                    static_cast<unsigned long>(probe.processId),
-                    static_cast<unsigned long long>(age / 1000));
+                showDetails = !showDetails;
             }
-            else
+
+            if (showDetails)
             {
                 ImGui::Text(
-                    T(language, Text::FrameProbeAge),
-                    static_cast<unsigned long>(probe.processId));
+                    T(language, Text::FrameProbeDetails),
+                    probe.sampleCount,
+                    probe.maxMs,
+                    probe.syncInterval,
+                    probe.avgCpuInPresentMs);
+
+                if (probe.lastUpdateMs != 0)
+                {
+                    ImGui::Text(
+                        T(language, Text::FrameProbePid),
+                        static_cast<unsigned long>(probe.processId),
+                        static_cast<unsigned long long>(age / 1000));
+                }
+                else
+                {
+                    ImGui::Text(
+                        T(language, Text::FrameProbeAge),
+                        static_cast<unsigned long>(probe.processId));
+                }
             }
 
             UI::Widgets::EndCard();
@@ -1525,6 +1540,17 @@ namespace UI::Screens::Optimization
 
         ImGui::PushStyleVar(
             ImGuiStyleVar_ChildRounding, 6.0f);
+
+        UI::Widgets::SectionTitle(
+            T(language, Text::OptimizationHowItWorksTitle),
+            nullptr,
+            palette);
+        UI::Widgets::BeginCard(
+            "OptimizerHowItWorks", 0.0f, palette);
+        UI::Widgets::MutedText(
+            T(language, Text::OptimizationHowItWorksBody),
+            palette);
+        UI::Widgets::EndCard();
 
         RenderControls(
             settings,

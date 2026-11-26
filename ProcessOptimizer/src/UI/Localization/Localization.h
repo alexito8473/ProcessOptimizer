@@ -258,6 +258,10 @@ namespace UI::Localization
         UiVersionLabel,
         ServiceVersionLabel,
         TrayVersionLabel,
+        OptimizationHowItWorksTitle,
+        OptimizationHowItWorksBody,
+        FrameProbeShowDetails,
+        FrameProbeHideDetails,
 
         Count
     };

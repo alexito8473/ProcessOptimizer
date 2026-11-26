@@ -258,7 +258,11 @@ namespace UI::Localization
             "Versions",
             "UI version",
             "Service version",
-            "Tray version"
+            "Tray version",
+            "How it works",
+            "The optimizer only acts on background processes with evidence. It duplicates the power plan, raises GPU priority only in the experimental profile, and reverts everything when A/B is negative or the profile is disabled. The game is never given hard affinity or priority changes.",
+            "Show details",
+            "Hide details"
         }};
 
         const std::array<const char*, Count> SpanishTexts{{
@@ -508,7 +512,11 @@ namespace UI::Localization
             "Versiones",
             "Version de la UI",
             "Version del servicio",
-            "Version del Tray"
+            "Version del Tray",
+            "Como funciona",
+            "El optimizador solo actua sobre procesos de segundo plano con evidencia. Duplica el plan de energia, sube la prioridad GPU solo en el perfil experimental y revierte todo si el A/B es negativo o se desactiva el perfil. El juego nunca recibe afinidad dura ni cambios de prioridad.",
+            "Mostrar detalles",
+            "Ocultar detalles"
         }};
     }
 
