@@ -255,7 +255,7 @@ namespace Optimization
             snapshot_.confidence = evidence ? confidence : 0.0;
             snapshot_.status = evidence
                 ? "Evidencia de interferencia: requiere A/B antes de actuar"
-                : (etwActive_
+                : (snapshot_.etwActive
                     ? "Sin evidencia: solo observacion"
                     : "Correlacion ligera activa; ETW solo bajo demanda");
         }
@@ -296,16 +296,24 @@ namespace Optimization
             PROCESS_TRACE_MODE_EVENT_RECORD;
         logfile.EventRecordCallback = &EventRecordCallback;
         logfile.Context = this;
-        logfile.LogFileName =
+        // Sesion en tiempo real: el nombre va en LoggerName, no en
+        // LogFileName. Usar LogFileName hacia a OpenTraceW buscar un
+        // archivo inexistente y la activacion fallaba en silencio.
+        logfile.LoggerName =
             const_cast<wchar_t*>(EtwSessionName);
 
         TRACEHANDLE handle = OpenTraceW(&logfile);
         if (handle == INVALID_PROCESSTRACE_HANDLE)
         {
+            const DWORD error = GetLastError();
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 snapshot_.etwActive = false;
+                snapshot_.status =
+                    "No se pudo abrir la sesion ETW (error " +
+                    std::to_string(error) + ")";
             }
+            Publish();
             return;
         }
 
@@ -313,7 +321,9 @@ namespace Optimization
             std::lock_guard<std::mutex> lock(mutex_);
             etwConsumerHandle_ = handle;
             snapshot_.etwActive = true;
+            snapshot_.status = "ETW activo: capturando context switches";
         }
+        Publish();
 
         ProcessTrace(&handle, 1, nullptr, nullptr);
         CloseTrace(handle);
