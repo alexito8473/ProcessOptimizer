@@ -54,6 +54,11 @@ namespace Service
         }
     }
 
+    MonitorState::MonitorState()
+    {
+        state_.serviceVersion = IPC::ServiceVersion;
+    }
+
     std::uint32_t MonitorState::ApplyCpu(
         const CpuSnapshot& snapshot)
     {

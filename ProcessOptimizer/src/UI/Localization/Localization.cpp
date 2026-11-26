@@ -254,7 +254,11 @@ namespace UI::Localization
             "Service did not answer in time",
             "Service not installed",
             "Service unavailable",
-            "Locked while A/B is running"
+            "Locked while A/B is running",
+            "Versions",
+            "UI version",
+            "Service version",
+            "Tray version"
         }};
 
         const std::array<const char*, Count> SpanishTexts{{
@@ -500,7 +504,11 @@ namespace UI::Localization
             "El servicio no respondio a tiempo",
             "Servicio no instalado",
             "Servicio no disponible",
-            "Bloqueado mientras corre el A/B"
+            "Bloqueado mientras corre el A/B",
+            "Versiones",
+            "Version de la UI",
+            "Version del servicio",
+            "Version del Tray"
         }};
     }
 

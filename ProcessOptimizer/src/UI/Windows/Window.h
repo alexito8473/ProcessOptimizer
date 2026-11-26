@@ -13,7 +13,6 @@
 #include <vector>
 #include "../../Core/Events/EventSystem.h"
 #include "../../IPC/PipeTransport.h"
-#include "../../Monitoring/SystemMonitor/SystemMonitor.h"
 #include "../../Monitoring/CpuMonitor/CpuInfo.h"
 #include "../../Monitoring/MemoryMonitor/MemoryInfo.h"
 #include "../../Monitoring/GpuMonitor/GpuInfo.h"
@@ -95,8 +94,6 @@ public:
     bool Create(HINSTANCE instance);
     void Run();
 
-    void StartMonitoring();
-    void StopMonitoring();
 
     bool IsServiceMode() const
     {
@@ -165,7 +162,6 @@ private:
 
     EventSystem events_;
 
-    std::shared_ptr<SystemMonitor> monitor_;
     std::shared_ptr<SharedState> sharedState_;
 
     ImGuiRenderer renderer_;
@@ -180,13 +176,6 @@ private:
     UI::Theme::UiPalette palette_{};
 
     bool showProcessorCharts_ = true;
-    bool subscribed_ = false;
-
-    // Suscripciones a eventos.
-    std::size_t cpuSubscription_ = 0;
-    std::size_t memorySubscription_ = 0;
-    std::size_t gpuSubscription_ = 0;
-    std::size_t processSubscription_ = 0;
 
     // Snapshots.
     CpuSnapshot cpuSnapshot_{};

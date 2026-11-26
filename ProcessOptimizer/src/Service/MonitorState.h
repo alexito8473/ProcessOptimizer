@@ -28,6 +28,8 @@ namespace Service
     class MonitorState
     {
     public:
+        MonitorState();
+
         std::uint32_t ApplyCpu(const CpuSnapshot& snapshot);
         std::uint32_t ApplyMemory(const MemorySnapshot& snapshot);
         std::uint32_t ApplyGpu(const GpuSnapshot& snapshot);

@@ -21,7 +21,13 @@ namespace IPC
     inline constexpr wchar_t PipeName[] =
         L"\\\\.\\pipe\\ProcessOptimizer.Monitor";
     inline constexpr std::uint32_t ProtocolMagic = 0x504F4D31; // "POM1"
-    inline constexpr std::uint32_t ProtocolVersion = 8;
+    inline constexpr std::uint32_t ProtocolVersion = 9;
+
+// Version comun de los tres componentes. Cada binario reporta la suya; si
+// difieren, la instalacion esta mezclada y hay que reinstalar.
+inline constexpr const char* UiVersion = "1.2.0";
+inline constexpr const char* ServiceVersion = "1.2.0";
+inline constexpr const char* TrayVersion = "1.2.0";
 
     enum class Request : std::uint32_t
     {
@@ -142,6 +148,9 @@ namespace IPC
     {
         std::uint64_t sequence = 0;
         std::uint64_t timestampMs = 0;
+
+        // Version reportada por el servicio que publico este estado.
+        std::string serviceVersion;
 
         // Mascara de ChangeMask del ultimo snapshot aplicado.
         std::uint32_t changedMask = 0;
@@ -1529,6 +1538,7 @@ namespace IPC
         Writer writer;
         writer.Pod(state.sequence);
         writer.Pod(state.timestampMs);
+        writer.Str(state.serviceVersion);
         writer.Pod(state.changedMask);
         writer.Bool(state.hasCpu);
         writer.Bool(state.hasMemory);
@@ -1559,6 +1569,7 @@ namespace IPC
 
         if (!reader.Pod(state.sequence) ||
             !reader.Pod(state.timestampMs) ||
+            !reader.Str(state.serviceVersion) ||
             !reader.Pod(state.changedMask) ||
             !reader.Bool(state.hasCpu) ||
             !reader.Bool(state.hasMemory) ||

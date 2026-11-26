@@ -254,6 +254,10 @@ namespace UI::Localization
         ConnectionNotInstalled,
         ConnectionOther,
         EnergyAbLocked,
+        VersionsTitle,
+        UiVersionLabel,
+        ServiceVersionLabel,
+        TrayVersionLabel,
 
         Count
     };

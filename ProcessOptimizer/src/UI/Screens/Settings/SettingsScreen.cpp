@@ -6,6 +6,7 @@
 
 #include "../../Components/Widgets/Widgets.h"
 #include "../../../IPC/PipeTransport.h"
+#include "../../../IPC/Protocol.h"
 #include "../../../Service/ServiceControl.h"
 
 namespace UI::Screens::Settings
@@ -305,6 +306,44 @@ namespace UI::Screens::Settings
             UI::Widgets::EndCard();
             return serviceChanged;
         }
+
+        void RenderVersions(
+            UI::Localization::Language language,
+            const UI::Theme::UiPalette& palette)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::VersionsTitle),
+                nullptr,
+                palette);
+
+            UI::Widgets::BeginCard(
+                "VersionsCard", 0.0f, palette);
+
+            std::string serviceVersion =
+                T(language, Text::ConnectionOther);
+            IPC::PipeClient client;
+            IPC::State state;
+            if (client.GetState(state) &&
+                !state.serviceVersion.empty())
+            {
+                serviceVersion = state.serviceVersion;
+            }
+
+            ImGui::Text(
+                "%s: %s",
+                T(language, Text::UiVersionLabel),
+                IPC::UiVersion);
+            ImGui::Text(
+                "%s: %s",
+                T(language, Text::ServiceVersionLabel),
+                serviceVersion.c_str());
+            ImGui::Text(
+                "%s: %s",
+                T(language, Text::TrayVersionLabel),
+                IPC::TrayVersion);
+
+            UI::Widgets::EndCard();
+        }
     }
 
     bool SettingsScreen::Render(
@@ -328,6 +367,7 @@ namespace UI::Screens::Settings
         RenderAppearance(settings, palette, language);
         const bool serviceChanged =
             RenderService(language, palette);
+        RenderVersions(language, palette);
         RenderPreview(palette, language);
 
         ImGui::Spacing();

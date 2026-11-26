@@ -308,7 +308,6 @@ Window::Window()
 Window::~Window()
 {
     StopServiceClient();
-    StopMonitoring();
     ShutdownRegionRenderer();
 }
 
@@ -377,12 +376,9 @@ bool Window::Create(HINSTANCE instance)
     ShowWindow(hwnd_, SW_SHOW);
     UpdateWindow(hwnd_);
 
-    // Si el servicio ya esta disponible no arrancamos el monitor local:
-    // el historico lo mantiene el servicio y aqui solo se consume.
-    IPC::PipeClient probe;
-    if (!probe.Ping())
-        StartMonitoring();
-
+    // La UI no mide nada por su cuenta: todo llega del servicio. Si no esta
+    // disponible, las pantallas muestran "esperando datos" y el usuario
+    // puede arrancarlo desde Ajustes o el Tray.
     StartServiceClient();
 
     return true;
@@ -1264,277 +1260,8 @@ void Window::AddGpuSample(float value)
     MarkRegionDirty();
 }
 
-void Window::StartMonitoring()
-{
-    if (subscribed_)
-        return;
+// Monitor local eliminado: la UI solo consume datos del servicio.
 
-    monitor_ = std::make_shared<SystemMonitor>(events_);
-
-    cpuSubscription_ =
-        events_.Subscribe<CpuSnapshot>(
-            "CPU",
-            [this](const CpuSnapshot& snapshot)
-            {
-                bool changed = false;
-
-                {
-                    std::lock_guard<std::mutex> lock(
-                        sharedState_->mutex);
-
-                    changed =
-                        !sharedState_->hasCpuSnapshot ||
-                        std::abs(
-                            sharedState_->cpuSnapshot
-                                .totalUsagePercent -
-                            snapshot.totalUsagePercent) > 0.001;
-
-                    // El uso total puede repetirse mientras cambian algunos nucleos.
-                    if (!changed)
-                    {
-                        const auto& previous =
-                            sharedState_->cpuSnapshot
-                                .logicalProcessors;
-
-                        if (previous.size() !=
-                            snapshot.logicalProcessors.size())
-                        {
-                            changed = true;
-                        }
-                        else
-                        {
-                            for (std::size_t i = 0;
-                                 i < previous.size();
-                                 ++i)
-                            {
-                                if (std::abs(
-                                        previous[i].usagePercent -
-                                        snapshot.logicalProcessors[i]
-                                            .usagePercent) > 0.001)
-                                {
-                                    changed = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    sharedState_->cpuSnapshot = snapshot;
-                    sharedState_->hasCpuSnapshot = true;
-
-                    // El historial de cada procesador logico se alimenta en
-                    // cada snapshot, aunque el uso total no haya cambiado.
-                    AppendProcessorHistorySamples(*sharedState_);
-
-                    if (changed)
-                    {
-                        const float usage =
-                            static_cast<float>(
-                                snapshot.totalUsagePercent);
-
-                        sharedState_->cpuHistory[
-                            sharedState_->cpuHistoryIndex] = usage;
-
-                        sharedState_->cpuHistoryIndex =
-                            (sharedState_->cpuHistoryIndex + 1) %
-                            sharedState_->cpuHistory.size();
-
-                        if (sharedState_->cpuHistoryCount <
-                            sharedState_->cpuHistory.size())
-                        {
-                            ++sharedState_->cpuHistoryCount;
-                        }
-
-                        AppendOverviewSample(*sharedState_);
-                    }
-                }
-
-                if (changed)
-                {
-                    using UI::Core::UiComponent;
-                    scheduler_.Invalidate(
-                        UI::Core::Mask(UiComponent::CpuPage) |
-                        UI::Core::Mask(UiComponent::OverviewPage));
-                    RequestFrame();
-                }
-            });
-
-    memorySubscription_ =
-        events_.Subscribe<MemorySnapshot>(
-            "MEMORY",
-            [this](const MemorySnapshot& snapshot)
-            {
-                bool changed = false;
-
-                {
-                    std::lock_guard<std::mutex> lock(
-                        sharedState_->mutex);
-
-                    changed =
-                        !sharedState_->hasMemorySnapshot ||
-                        std::abs(
-                            sharedState_->memorySnapshot
-                                .usagePercent -
-                            snapshot.usagePercent) > 0.001;
-
-                    sharedState_->memorySnapshot = snapshot;
-                    sharedState_->hasMemorySnapshot = true;
-
-                    if (changed)
-                    {
-                        const float usage =
-                            static_cast<float>(
-                                snapshot.usagePercent);
-
-                        sharedState_->memoryHistory[
-                            sharedState_->memoryHistoryIndex] = usage;
-
-                        sharedState_->memoryHistoryIndex =
-                            (sharedState_->memoryHistoryIndex + 1) %
-                            sharedState_->memoryHistory.size();
-
-                        if (sharedState_->memoryHistoryCount <
-                            sharedState_->memoryHistory.size())
-                        {
-                            ++sharedState_->memoryHistoryCount;
-                        }
-
-                        AppendOverviewSample(*sharedState_);
-                    }
-                }
-
-                if (changed)
-                {
-                    using UI::Core::UiComponent;
-                    scheduler_.Invalidate(
-                        UI::Core::Mask(UiComponent::MemorySummary) |
-                        UI::Core::Mask(UiComponent::MemoryChart) |
-                        UI::Core::Mask(UiComponent::MemoryModules) |
-                        UI::Core::Mask(UiComponent::OverviewPage));
-                    RequestFrame();
-                }
-            });
-
-    gpuSubscription_ =
-        events_.Subscribe<GpuSnapshot>(
-            "GPU",
-            [this](const GpuSnapshot& snapshot)
-            {
-                double currentMax = -1.0;
-
-                for (const GpuAdapterInfo& gpu : snapshot.gpus)
-                {
-                    currentMax = (std::max)(
-                        currentMax, gpu.usagePercent);
-                }
-
-                bool changed = false;
-
-                {
-                    std::lock_guard<std::mutex> lock(
-                        sharedState_->mutex);
-
-                    if (!sharedState_->hasGpuSnapshot)
-                    {
-                        changed = true;
-                    }
-                    else
-                    {
-                        double previousMax = -1.0;
-
-                        for (const GpuAdapterInfo& gpu :
-                             sharedState_->gpuSnapshot.gpus)
-                        {
-                            previousMax = (std::max)(
-                                previousMax, gpu.usagePercent);
-                        }
-
-                        changed =
-                            previousMax < 0.0 ||
-                            currentMax < 0.0 ||
-                            std::abs(previousMax - currentMax) >
-                                0.01;
-                    }
-
-                    sharedState_->gpuSnapshot = snapshot;
-                    sharedState_->hasGpuSnapshot = true;
-
-                    if (changed)
-                    {
-                        AppendGpuHistorySample(
-                            sharedState_->gpuHistory,
-                            snapshot);
-
-                        AppendOverviewSample(*sharedState_);
-                    }
-                }
-
-                if (changed)
-                {
-                    using UI::Core::UiComponent;
-                    scheduler_.Invalidate(
-                        UI::Core::Mask(UiComponent::GpuPage) |
-                        UI::Core::Mask(UiComponent::OverviewPage));
-                    RequestFrame();
-                }
-            });
-
-    processSubscription_ =
-        events_.Subscribe<ProcessSnapshot>(
-            "PROCESS",
-            [this](const ProcessSnapshot& snapshot)
-            {
-                {
-                    std::lock_guard<std::mutex> lock(
-                        sharedState_->mutex);
-
-                    sharedState_->processSnapshot = snapshot;
-                    sharedState_->hasProcessSnapshot = true;
-                }
-
-                using UI::Core::UiComponent;
-                scheduler_.Invalidate(
-                    UI::Core::Mask(UiComponent::ProcessPage) |
-                    UI::Core::Mask(UiComponent::OverviewPage));
-                RequestFrame();
-            });
-
-    subscribed_ = true;
-
-    monitor_->Start();
-}
-
-
-void Window::StopMonitoring()
-{
-    if (monitor_)
-    {
-        monitor_->Stop();
-    }
-
-    if (subscribed_)
-    {
-        events_.Unsubscribe<CpuSnapshot>(
-            "CPU",
-            cpuSubscription_);
-
-        events_.Unsubscribe<MemorySnapshot>(
-            "MEMORY",
-            memorySubscription_);
-
-        events_.Unsubscribe<GpuSnapshot>(
-            "GPU",
-            gpuSubscription_);
-
-        events_.Unsubscribe<ProcessSnapshot>(
-            "PROCESS",
-            processSubscription_);
-    }
-
-    subscribed_ = false;
-
-    monitor_.reset();
-}
 
 void Window::StartServiceClient()
 {
@@ -1567,9 +1294,6 @@ void Window::ServiceClientLoop()
             const bool wasServiceMode =
                 serviceMode_.exchange(true);
 
-            if (!wasServiceMode || subscribed_)
-                StopMonitoring();
-
             if (!wasServiceMode)
                 forceApplyOnConnect_ = true;
 
@@ -1593,10 +1317,10 @@ void Window::ServiceClientLoop()
                 forceApplyOnConnect_ = false;
             }
 
-            // El servicio publica CPU cada 1 s; sondear mas rapido solo
-            // aumentaba el coste de serializacion y conexiones del pipe.
+            // La UI solo consume; 1 s coincide con la publicacion del servicio
+            // y evita abrir el pipe mas de lo necesario.
             std::this_thread::sleep_for(
-                std::chrono::milliseconds(400));
+                std::chrono::milliseconds(1000));
             continue;
         }
 
@@ -1606,7 +1330,17 @@ void Window::ServiceClientLoop()
         lastForegroundPid_ = 0xFFFFFFFFu;
 
         if (serviceMode_.exchange(false))
-            StartMonitoring();
+        {
+            // Sin servicio no hay datos nuevos: evita mostrar una captura vieja.
+            std::lock_guard<std::mutex> lock(
+                sharedState_->mutex);
+            sharedState_->hasCpuSnapshot = false;
+            sharedState_->hasMemorySnapshot = false;
+            sharedState_->hasGpuSnapshot = false;
+            sharedState_->hasProcessSnapshot = false;
+            sharedState_->hasTopology = false;
+            sharedState_->hasOptimizer = false;
+        }
 
         std::this_thread::sleep_for(
             std::chrono::milliseconds(1500));
