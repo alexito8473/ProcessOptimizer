@@ -315,7 +315,7 @@ namespace Optimization
         while (running_.load())
         {
             std::this_thread::sleep_for(
-                std::chrono::milliseconds(2000));
+                std::chrono::milliseconds(5000));
 
             if (!running_.load())
                 break;
@@ -339,6 +339,25 @@ namespace Optimization
         if (!enabled)
         {
             RestoreAll();
+            return;
+        }
+
+        OptimizerMode currentMode = OptimizerMode::Off;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            currentMode = state_.mode;
+        }
+
+        // El modo Gaming no mueve hilos: solo deja que Windows decida.
+        // Saltarse el plan evita enumerar procesos cada pocos segundos.
+        if (currentMode == OptimizerMode::Gaming)
+        {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                state_.running = true;
+                state_.status = "Gaming: juego intacto, Windows decide";
+            }
+            Publish();
             return;
         }
 
@@ -1064,8 +1083,10 @@ namespace Optimization
                 continue;
             }
 
-            std::uint64_t processStart = 0;
-            if (!GetProcessStart(
+            std::uint64_t processStart =
+                process.startTime100ns;
+            if (processStart == 0 &&
+                !GetProcessStart(
                     process.processId, processStart))
             {
                 continue;
