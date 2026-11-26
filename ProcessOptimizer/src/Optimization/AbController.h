@@ -71,6 +71,7 @@ namespace Optimization
         Phase phase_ = Phase::Idle;
         std::uint32_t phaseSeconds_ = 60;
         std::uint32_t elapsed_ = 0;
+        std::uint32_t transitionElapsed_ = 0;
         bool applyCandidate_ = true;
         bool started_ = false;
         FrameProbe* probe_ = nullptr;

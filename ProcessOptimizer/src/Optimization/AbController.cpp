@@ -92,6 +92,7 @@ namespace Optimization
             probe_ = probe;
             energy_ = energy;
             elapsed_ = 0;
+            transitionElapsed_ = 0;
             baseline_ = Accumulator{};
             candidate_ = Accumulator{};
             result_ = AbResult{};
@@ -147,25 +148,91 @@ namespace Optimization
                 candidate_.Add(frame);
 
             ++elapsed_;
+            const std::uint32_t baselineSamples =
+                static_cast<std::uint32_t>(
+                    baseline_.Measurement().sampleCount);
+            const std::uint32_t candidateSamples =
+                static_cast<std::uint32_t>(
+                    candidate_.Measurement().sampleCount);
+
+            const std::uint32_t extendedPhase =
+                phaseSeconds_ * 2;
+
+            if (phase_ == Phase::Baseline)
+            {
+                result_.phase = baselineSamples >= 30
+                    ? "Linea base lista; cambiando de fase"
+                    : "Midiendo linea base: " +
+                          std::to_string(baselineSamples) +
+                          "/30 muestras DXGI";
+                result_.verdict = baselineSamples >= 30
+                    ? "Esperando cambio de fase"
+                    : "Sin muestras suficientes: mantén el juego en primer plano";
+
+                const bool enoughSamples =
+                    baselineSamples >= 30;
+                const bool phaseExpired =
+                    elapsed_ >= phaseSeconds_;
+                const bool phaseTimedOut =
+                    elapsed_ >= extendedPhase;
+
+                if ((phaseExpired && enoughSamples) ||
+                    phaseTimedOut)
+                {
+                    phase_ = Phase::Candidate;
+                    transitionElapsed_ = elapsed_;
+                    result_.phase =
+                        "Candidato con perfil experimental";
+                    if (applyCandidate_ && energy_)
+                        energy_->SetExperimentalProfile(true);
+                }
+            }
+            else if (phase_ == Phase::Candidate)
+            {
+                const std::uint32_t candidateElapsed =
+                    elapsed_ - transitionElapsed_;
+
+                result_.phase = candidateSamples >= 30
+                    ? "Candidato listo; finalizando"
+                    : "Midiendo candidato: " +
+                          std::to_string(candidateSamples) +
+                          "/30 muestras DXGI";
+                result_.verdict = candidateSamples >= 30
+                    ? "Esperando finalizacion"
+                    : "Sin muestras suficientes en candidato";
+
+                const bool enoughSamples =
+                    candidateSamples >= 30;
+                const bool phaseExpired =
+                    candidateElapsed >= phaseSeconds_;
+                const bool phaseTimedOut =
+                    candidateElapsed >= extendedPhase;
+
+                if ((phaseExpired && enoughSamples) ||
+                    phaseTimedOut)
+                {
+                    finish = true;
+                }
+            }
+
             const std::uint64_t totalTicks =
                 static_cast<std::uint64_t>(phaseSeconds_) * 2;
+            const std::uint64_t progressBase =
+                (static_cast<std::uint64_t>(elapsed_) * 50) /
+                (phaseSeconds_ > 0 ? phaseSeconds_ : 1);
             const std::uint64_t progress =
-                (static_cast<std::uint64_t>(elapsed_) * 100) / totalTicks;
+                phase_ == Phase::Baseline
+                    ? (std::min)(std::uint64_t{ 49 }, progressBase)
+                    : 50 + (std::min)(
+                               std::uint64_t{ 49 },
+                               (static_cast<std::uint64_t>(
+                                    elapsed_ - transitionElapsed_) *
+                                50) /
+                                   (phaseSeconds_ > 0
+                                        ? phaseSeconds_
+                                        : 1));
             result_.progressPercent = static_cast<std::uint32_t>(
                 (std::min)(std::uint64_t{ 100 }, progress));
-
-            // 60 s de linea base + 60 s de candidato, no 30 + 30.
-            if (elapsed_ >= phaseSeconds_ && phase_ == Phase::Baseline)
-            {
-                phase_ = Phase::Candidate;
-                result_.phase = "Candidato con perfil experimental";
-                if (applyCandidate_ && energy_)
-                    energy_->SetExperimentalProfile(true);
-            }
-            else if (elapsed_ >= totalTicks)
-            {
-                finish = true;
-            }
         }
 
         if (finish)
@@ -200,8 +267,34 @@ namespace Optimization
             if (result_.baseline.sampleCount < 30 ||
                 result_.candidate.sampleCount < 30)
             {
-                result_.verdict =
-                    "Datos insuficientes: conserva la configuracion anterior";
+                std::string reason =
+                    "Datos insuficientes: ";
+                if (result_.baseline.sampleCount < 30)
+                    reason +=
+                        "linea base " +
+                        std::to_string(
+                            result_.baseline.sampleCount) +
+                        "/30 muestras DXGI. ";
+                if (result_.candidate.sampleCount < 30)
+                    reason +=
+                        "candidato " +
+                        std::to_string(
+                            result_.candidate.sampleCount) +
+                        "/30 muestras DXGI. ";
+                reason +=
+                    "Mantén el juego en primer plano y renderizando "
+                    "por DXGI durante toda la prueba.";
+
+                const auto probeSnapshot = probe_
+                    ? probe_->Snapshot()
+                    : Optimization::FrameProbeSnapshot{};
+                if (!probeSnapshot.statusText.empty())
+                {
+                    reason += " Estado: ";
+                    reason += probeSnapshot.statusText;
+                }
+
+                result_.verdict = reason;
                 result_.kept = false;
             }
             else

@@ -242,8 +242,10 @@ namespace Optimization
         std::lock_guard<std::mutex> applyLock(applyMutex_);
 
         bool disable = false;
+        OptimizerMode previousMode = OptimizerMode::Off;
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            previousMode = state_.mode;
             state_.mode = mode;
             state_.enabled = mode != OptimizerMode::Off;
             disable = mode == OptimizerMode::Off;
@@ -254,6 +256,13 @@ namespace Optimization
                 state_.status = mode == OptimizerMode::Gaming
                                     ? "Perfil Gaming"
                                     : "Perfil Multitarea";
+        }
+
+        // Cambiar de perfil no puede arrastrar CPU Sets del anterior.
+        if (previousMode != OptimizerMode::Off &&
+            previousMode != mode)
+        {
+            RestoreAll();
         }
 
         if (disable)
@@ -348,14 +357,26 @@ namespace Optimization
             currentMode = state_.mode;
         }
 
-        // El modo Gaming no mueve hilos: solo deja que Windows decida.
-        // Saltarse el plan evita enumerar procesos cada pocos segundos.
-        if (currentMode == OptimizerMode::Gaming)
+        // Gaming y Multitarea ya no reubican hilos: Windows planifica
+        // mejor que cualquier afinidad manual. Solo se publica estado y se
+        // limpian cambios residuales de versiones anteriores. La contencion
+        // real de segundo plano la gestiona BackgroundContainment con
+        // evidencia y A/B validado.
+        if (currentMode == OptimizerMode::Gaming ||
+            currentMode == OptimizerMode::Multitasking)
         {
+            RestoreAll();
+
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 state_.running = true;
-                state_.status = "Gaming: juego intacto, Windows decide";
+                state_.processes.clear();
+                for (auto& core : state_.cores)
+                    core.threadCount = 0;
+                state_.status =
+                    currentMode == OptimizerMode::Gaming
+                        ? "Gaming: juego intacto, Windows decide"
+                        : "Multitarea: solo contencion con evidencia A/B";
             }
             Publish();
             return;
