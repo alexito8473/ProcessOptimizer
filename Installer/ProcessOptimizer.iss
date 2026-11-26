@@ -7,9 +7,9 @@ OutputBaseFilename=ProcessOptimizer-Setup
 ArchitecturesInstallIn64BitMode=x64
 Compression=lzma
 SolidCompression=yes
-CloseApplications=force
+CloseApplications=no
 PrivilegesRequired=admin
-AppMutex=ProcessOptimizerSetup
+; AppMutex desactivado: StopServiceForUpgrade mata los procesos antes de copiar.
 SetupIconFile=..\ProcessOptimizer\Assets\logo.ico
 
 [Files]
