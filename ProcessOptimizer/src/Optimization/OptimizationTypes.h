@@ -238,6 +238,103 @@ namespace Optimization
         std::int32_t syncInterval = 0;
         FrameVerdict verdict = FrameVerdict::NoData;
         std::string statusText;
+
+        // Contadores agregados para la comparacion A/B. Se acumulan en la
+        // ventana actual y se publican ya resumidos: nunca una muestra
+        // por frame a traves de IPC.
+        std::uint32_t framesOver20Ms = 0;
+        std::uint32_t framesOver25Ms = 0;
+        std::uint64_t sampleWindowMs = 0;
+    };
+
+    struct FrameMeasurement
+    {
+        std::uint32_t sampleCount = 0;
+        double p50Ms = 0.0;
+        double p95Ms = 0.0;
+        double p99Ms = 0.0;
+        double fps = 0.0;
+        std::uint32_t framesOver20Ms = 0;
+        std::uint32_t framesOver25Ms = 0;
+        double cpuInPresentMs = 0.0;
+    };
+
+    // Resultado de la prueba A/B de 60 s sin cambios frente a 60 s con
+    // perfil. El cambio solo se conserva si baja p95 sin empeorar p99.
+    struct AbResult
+    {
+        bool running = false;
+        bool completed = false;
+        bool kept = false;
+        std::string phase;
+        std::uint32_t progressPercent = 0;
+        FrameMeasurement baseline;
+        FrameMeasurement candidate;
+        double p95DeltaPercent = 0.0;
+        double p99DeltaPercent = 0.0;
+        std::string verdict;
+        std::string csvPath;
+    };
+
+    struct ContainmentSnapshot
+    {
+        bool enabled = false;
+        bool evidence = false;
+        std::uint32_t containedProcesses = 0;
+        std::uint32_t revertedProcesses = 0;
+        std::string status;
+    };
+
+    struct StutterSnapshot
+    {
+        bool available = false;
+        bool etwActive = false;
+        double contextSwitchesPerSec = 0.0;
+        double hardFaultsPerSec = 0.0;
+        double pagesInputPerSec = 0.0;
+        double dpcPercent = 0.0;
+        double interruptPercent = 0.0;
+        std::string topSuspect;
+        double confidence = 0.0;
+        std::string status;
+    };
+
+    struct EnergySnapshot
+    {
+        bool available = false;
+        bool customSchemeActive = false;
+        std::string activeSchemeName;
+        double minProcessorState = 0.0;
+        double maxProcessorState = 0.0;
+        std::int32_t boostMode = -1;
+        std::uint32_t parkedProcessors = 0;
+        std::string gpuPriority;
+        bool experimentalProfile = false;
+        std::string status;
+    };
+
+    struct DiagnosticsSnapshot
+    {
+        bool available = false;
+        std::uint32_t physicalMemoryMb = 0;
+        std::uint32_t largePageMinimumKb = 0;
+        bool largePagesAvailable = false;
+        std::uint16_t numaNodes = 0;
+        bool memoryCompressionEnabled = false;
+        bool sysMainEnabled = false;
+        bool bypassIoSupported = false;
+        std::uint32_t l3Domains = 0;
+        std::uint32_t hotL3CacheKb = 0;
+        std::string notes;
+    };
+
+    struct AuditEntry
+    {
+        std::uint64_t timeMs = 0;
+        std::string action;
+        std::string target;
+        std::string detail;
+        bool reverted = false;
     };
 
     struct OptimizerState
@@ -257,6 +354,12 @@ namespace Optimization
         std::string status;
         BenchmarkState benchmark;
         FrameProbeSnapshot frameProbe;
+        AbResult ab;
+        ContainmentSnapshot containment;
+        StutterSnapshot stutter;
+        EnergySnapshot energy;
+        DiagnosticsSnapshot diagnostics;
+        std::vector<AuditEntry> audit;
         std::vector<ProcessPlan> processes;
         std::vector<CoreAssignment> cores;
     };

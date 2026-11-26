@@ -42,6 +42,17 @@ namespace Service
         std::uint32_t SetFrameProbe(
             const Optimization::FrameProbeSnapshot& frameProbe);
 
+        std::uint32_t SetAb(const Optimization::AbResult& ab);
+        std::uint32_t SetContainment(
+            const Optimization::ContainmentSnapshot& containment);
+        std::uint32_t SetStutter(
+            const Optimization::StutterSnapshot& stutter);
+        std::uint32_t SetEnergy(
+            const Optimization::EnergySnapshot& energy);
+        std::uint32_t SetDiagnostics(
+            const Optimization::DiagnosticsSnapshot& diagnostics);
+        std::uint32_t AddAudit(const Optimization::AuditEntry& entry);
+
         IPC::State Snapshot() const;
 
         // Devuelve una instantanea compartida solo cuando la secuencia

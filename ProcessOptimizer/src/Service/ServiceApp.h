@@ -6,6 +6,11 @@
 #include "../Optimization/CpuOrchestrator.h"
 #include "../Optimization/CpuBenchmark.h"
 #include "../Optimization/FrameProbe.h"
+#include "../Optimization/AbController.h"
+#include "../Optimization/BackgroundContainment.h"
+#include "../Optimization/StutterCorrelator.h"
+#include "../Optimization/EnergyManager.h"
+#include "../Optimization/ResourceDiagnostics.h"
 #include "../Monitoring/ProcessMonitor/ProcessInfo.h"
 #include "MonitorState.h"
 
@@ -13,6 +18,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <thread>
 
 namespace Service
 {
@@ -39,12 +45,19 @@ namespace Service
         }
 
     private:
+        void ManagementLoop();
+
         EventSystem events_;
         std::shared_ptr<SystemMonitor> monitor_;
         std::unique_ptr<IPC::PipeServer> pipe_;
         std::unique_ptr<Optimization::CpuOrchestrator> orchestrator_;
         std::unique_ptr<Optimization::CpuBenchmark> benchmark_;
         std::unique_ptr<Optimization::FrameProbe> frameProbe_;
+        std::unique_ptr<Optimization::AbController> ab_;
+        std::unique_ptr<Optimization::BackgroundContainment> containment_;
+        std::unique_ptr<Optimization::StutterCorrelator> stutter_;
+        std::unique_ptr<Optimization::EnergyManager> energy_;
+        std::unique_ptr<Optimization::ResourceDiagnostics> diagnostics_;
         MonitorState state_;
 
         Optimization::TopologySnapshot topology_;
@@ -61,6 +74,14 @@ namespace Service
             Optimization::OptimizerMode::Off;
         std::mutex foregroundRequestMutex_;
         DWORD requestedForegroundPid_ = 0;
+        std::uint64_t foregroundRequestMs_ = 0;
+
+        std::mutex telemetryMutex_;
+        ProcessSnapshot lastProcesses_;
+        DWORD resolvedGamePid_ = 0;
+
+        std::atomic<bool> managementRunning_{ false };
+        std::thread managementThread_;
 
         std::size_t cpuSubscription_ = 0;
         std::size_t memorySubscription_ = 0;

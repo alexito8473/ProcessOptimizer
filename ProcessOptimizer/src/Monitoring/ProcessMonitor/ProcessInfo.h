@@ -44,6 +44,8 @@ struct ProcessInfo
     // CPU
     double cpuUsagePercent = 0.0;
     std::uint64_t cpuTime100ns = 0;
+    // Identidad de instancia: evita confundir un PID reutilizado.
+    std::uint64_t startTime100ns = 0;
 
     // Memory
     std::uint64_t workingSetBytes = 0;

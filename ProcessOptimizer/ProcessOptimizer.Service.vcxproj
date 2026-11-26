@@ -82,7 +82,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Pdh.lib;tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Pdh.lib;tdh.lib;PowrProf.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -101,7 +101,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Pdh.lib;tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Pdh.lib;tdh.lib;PowrProf.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -119,7 +119,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Pdh.lib;tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Pdh.lib;tdh.lib;PowrProf.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -139,7 +139,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Pdh.lib;d2d1.lib;dwrite.lib;tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Pdh.lib;d2d1.lib;dwrite.lib;tdh.lib;PowrProf.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -172,6 +172,11 @@
     <ClCompile Include="src\Optimization\CpuBenchmark.cpp" />
     <ClCompile Include="src\Optimization\CpuOrchestrator.cpp" />
     <ClCompile Include="src\Optimization\FrameProbe.cpp" />
+    <ClCompile Include="src\Optimization\AbController.cpp" />
+    <ClCompile Include="src\Optimization\BackgroundContainment.cpp" />
+    <ClCompile Include="src\Optimization\StutterCorrelator.cpp" />
+    <ClCompile Include="src\Optimization\EnergyManager.cpp" />
+    <ClCompile Include="src\Optimization\ResourceDiagnostics.cpp" />
     <ClCompile Include="src\Optimization\ThreadMonitor.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -205,6 +210,11 @@
     <ClInclude Include="src\Optimization\OptimizationTypes.h" />
     <ClInclude Include="src\Optimization\CpuBenchmark.h" />
     <ClInclude Include="src\Optimization\FrameProbe.h" />
+    <ClInclude Include="src\Optimization\AbController.h" />
+    <ClInclude Include="src\Optimization\BackgroundContainment.h" />
+    <ClInclude Include="src\Optimization\StutterCorrelator.h" />
+    <ClInclude Include="src\Optimization\EnergyManager.h" />
+    <ClInclude Include="src\Optimization\ResourceDiagnostics.h" />
     <ClInclude Include="src\Optimization\ThreadMonitor.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>

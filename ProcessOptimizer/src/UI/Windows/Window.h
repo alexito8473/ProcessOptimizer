@@ -103,6 +103,12 @@ public:
         return serviceMode_.load();
     }
 
+    IPC::ConnectionIssue ServiceIssue() const
+    {
+        return static_cast<IPC::ConnectionIssue>(
+            serviceIssue_.load());
+    }
+
 private:
     void StartServiceClient();
     void StopServiceClient();
@@ -209,6 +215,8 @@ private:
     // StartMonitoring mantiene el monitor local para que la UI siga
     // funcionando por si sola.
     std::atomic<bool> serviceMode_{ false };
+    std::atomic<int> serviceIssue_{
+        static_cast<int>(IPC::ConnectionIssue::None) };
     std::atomic<bool> clientThreadRunning_{ false };
     std::thread clientThread_;
     std::uint64_t lastRemoteSequence_ = 0;

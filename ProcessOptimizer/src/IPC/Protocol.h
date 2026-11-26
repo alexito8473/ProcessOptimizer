@@ -21,7 +21,7 @@ namespace IPC
     inline constexpr wchar_t PipeName[] =
         L"\\\\.\\pipe\\ProcessOptimizer.Monitor";
     inline constexpr std::uint32_t ProtocolMagic = 0x504F4D31; // "POM1"
-    inline constexpr std::uint32_t ProtocolVersion = 6;
+    inline constexpr std::uint32_t ProtocolVersion = 8;
 
     enum class Request : std::uint32_t
     {
@@ -29,7 +29,12 @@ namespace IPC
         GetState = 2,
         SetOptimizerConfig = 3,
         SetForegroundProcess = 4,
-        StartBenchmark = 5
+        StartBenchmark = 5,
+        StartAb = 6,
+        StopAb = 7,
+        SetExperimentalProfile = 8,
+        SetEtwStutterProbe = 9,
+        SetContainment = 10
     };
 
     enum class ResponseType : std::uint32_t
@@ -55,6 +60,17 @@ namespace IPC
     struct BenchmarkCommand
     {
         std::uint32_t durationMs = 4000;
+    };
+
+    struct AbCommand
+    {
+        std::uint32_t phaseSeconds = 60;
+        bool applyCandidate = true;
+    };
+
+    struct ToggleCommand
+    {
+        bool enabled = false;
     };
 
     struct ResponseHeader
@@ -725,6 +741,7 @@ namespace IPC
             w.Bool(v.is64Bit);
             w.Pod(v.cpuUsagePercent);
             w.Pod(v.cpuTime100ns);
+            w.Pod(v.startTime100ns);
             w.Pod(v.workingSetBytes);
             w.Pod(v.privateMemoryBytes);
             w.Pod(v.sharedMemoryBytes);
@@ -764,6 +781,7 @@ namespace IPC
                    r.Bool(v.is64Bit) &&
                    r.Pod(v.cpuUsagePercent) &&
                    r.Pod(v.cpuTime100ns) &&
+                   r.Pod(v.startTime100ns) &&
                    r.Pod(v.workingSetBytes) &&
                    r.Pod(v.privateMemoryBytes) &&
                    r.Pod(v.sharedMemoryBytes) &&
@@ -1147,6 +1165,9 @@ namespace IPC
             w.Pod(v.syncInterval);
             WriteEnum(w, v.verdict);
             w.Str(v.statusText);
+            w.Pod(v.framesOver20Ms);
+            w.Pod(v.framesOver25Ms);
+            w.Pod(v.sampleWindowMs);
         }
 
         inline bool Read(
@@ -1165,7 +1186,202 @@ namespace IPC
                    r.Pod(v.avgCpuInPresentMs) &&
                    r.Pod(v.syncInterval) &&
                    ReadEnum(r, v.verdict) &&
-                   r.Str(v.statusText);
+                   r.Str(v.statusText) &&
+                   r.Pod(v.framesOver20Ms) &&
+                   r.Pod(v.framesOver25Ms) &&
+                   r.Pod(v.sampleWindowMs);
+        }
+
+        inline void Write(Writer& w, const Optimization::FrameMeasurement& v)
+        {
+            w.Pod(v.sampleCount);
+            w.Pod(v.p50Ms);
+            w.Pod(v.p95Ms);
+            w.Pod(v.p99Ms);
+            w.Pod(v.fps);
+            w.Pod(v.framesOver20Ms);
+            w.Pod(v.framesOver25Ms);
+            w.Pod(v.cpuInPresentMs);
+        }
+
+        inline bool Read(Reader& r, Optimization::FrameMeasurement& v)
+        {
+            return r.Pod(v.sampleCount) &&
+                   r.Pod(v.p50Ms) &&
+                   r.Pod(v.p95Ms) &&
+                   r.Pod(v.p99Ms) &&
+                   r.Pod(v.fps) &&
+                   r.Pod(v.framesOver20Ms) &&
+                   r.Pod(v.framesOver25Ms) &&
+                   r.Pod(v.cpuInPresentMs);
+        }
+
+        inline void Write(Writer& w, const Optimization::AbResult& v)
+        {
+            w.Bool(v.running);
+            w.Bool(v.completed);
+            w.Bool(v.kept);
+            w.Str(v.phase);
+            w.Pod(v.progressPercent);
+            Write(w, v.baseline);
+            Write(w, v.candidate);
+            w.Pod(v.p95DeltaPercent);
+            w.Pod(v.p99DeltaPercent);
+            w.Str(v.verdict);
+            w.Str(v.csvPath);
+        }
+
+        inline bool Read(Reader& r, Optimization::AbResult& v)
+        {
+            return r.Bool(v.running) &&
+                   r.Bool(v.completed) &&
+                   r.Bool(v.kept) &&
+                   r.Str(v.phase) &&
+                   r.Pod(v.progressPercent) &&
+                   Read(r, v.baseline) &&
+                   Read(r, v.candidate) &&
+                   r.Pod(v.p95DeltaPercent) &&
+                   r.Pod(v.p99DeltaPercent) &&
+                   r.Str(v.verdict) &&
+                   r.Str(v.csvPath);
+        }
+
+        inline void Write(
+            Writer& w,
+            const Optimization::ContainmentSnapshot& v)
+        {
+            w.Bool(v.enabled);
+            w.Bool(v.evidence);
+            w.Pod(v.containedProcesses);
+            w.Pod(v.revertedProcesses);
+            w.Str(v.status);
+        }
+
+        inline bool Read(
+            Reader& r,
+            Optimization::ContainmentSnapshot& v)
+        {
+            return r.Bool(v.enabled) &&
+                   r.Bool(v.evidence) &&
+                   r.Pod(v.containedProcesses) &&
+                   r.Pod(v.revertedProcesses) &&
+                   r.Str(v.status);
+        }
+
+        inline void Write(
+            Writer& w,
+            const Optimization::StutterSnapshot& v)
+        {
+            w.Bool(v.available);
+            w.Bool(v.etwActive);
+            w.Pod(v.contextSwitchesPerSec);
+            w.Pod(v.hardFaultsPerSec);
+            w.Pod(v.pagesInputPerSec);
+            w.Pod(v.dpcPercent);
+            w.Pod(v.interruptPercent);
+            w.Str(v.topSuspect);
+            w.Pod(v.confidence);
+            w.Str(v.status);
+        }
+
+        inline bool Read(
+            Reader& r,
+            Optimization::StutterSnapshot& v)
+        {
+            return r.Bool(v.available) &&
+                   r.Bool(v.etwActive) &&
+                   r.Pod(v.contextSwitchesPerSec) &&
+                   r.Pod(v.hardFaultsPerSec) &&
+                   r.Pod(v.pagesInputPerSec) &&
+                   r.Pod(v.dpcPercent) &&
+                   r.Pod(v.interruptPercent) &&
+                   r.Str(v.topSuspect) &&
+                   r.Pod(v.confidence) &&
+                   r.Str(v.status);
+        }
+
+        inline void Write(
+            Writer& w,
+            const Optimization::EnergySnapshot& v)
+        {
+            w.Bool(v.available);
+            w.Bool(v.customSchemeActive);
+            w.Str(v.activeSchemeName);
+            w.Pod(v.minProcessorState);
+            w.Pod(v.maxProcessorState);
+            w.Pod(v.boostMode);
+            w.Pod(v.parkedProcessors);
+            w.Str(v.gpuPriority);
+            w.Bool(v.experimentalProfile);
+            w.Str(v.status);
+        }
+
+        inline bool Read(
+            Reader& r,
+            Optimization::EnergySnapshot& v)
+        {
+            return r.Bool(v.available) &&
+                   r.Bool(v.customSchemeActive) &&
+                   r.Str(v.activeSchemeName) &&
+                   r.Pod(v.minProcessorState) &&
+                   r.Pod(v.maxProcessorState) &&
+                   r.Pod(v.boostMode) &&
+                   r.Pod(v.parkedProcessors) &&
+                   r.Str(v.gpuPriority) &&
+                   r.Bool(v.experimentalProfile) &&
+                   r.Str(v.status);
+        }
+
+        inline void Write(
+            Writer& w,
+            const Optimization::DiagnosticsSnapshot& v)
+        {
+            w.Bool(v.available);
+            w.Pod(v.physicalMemoryMb);
+            w.Pod(v.largePageMinimumKb);
+            w.Bool(v.largePagesAvailable);
+            w.Pod(v.numaNodes);
+            w.Bool(v.memoryCompressionEnabled);
+            w.Bool(v.sysMainEnabled);
+            w.Bool(v.bypassIoSupported);
+            w.Pod(v.l3Domains);
+            w.Pod(v.hotL3CacheKb);
+            w.Str(v.notes);
+        }
+
+        inline bool Read(
+            Reader& r,
+            Optimization::DiagnosticsSnapshot& v)
+        {
+            return r.Bool(v.available) &&
+                   r.Pod(v.physicalMemoryMb) &&
+                   r.Pod(v.largePageMinimumKb) &&
+                   r.Bool(v.largePagesAvailable) &&
+                   r.Pod(v.numaNodes) &&
+                   r.Bool(v.memoryCompressionEnabled) &&
+                   r.Bool(v.sysMainEnabled) &&
+                   r.Bool(v.bypassIoSupported) &&
+                   r.Pod(v.l3Domains) &&
+                   r.Pod(v.hotL3CacheKb) &&
+                   r.Str(v.notes);
+        }
+
+        inline void Write(Writer& w, const Optimization::AuditEntry& v)
+        {
+            w.Pod(v.timeMs);
+            w.Str(v.action);
+            w.Str(v.target);
+            w.Str(v.detail);
+            w.Bool(v.reverted);
+        }
+
+        inline bool Read(Reader& r, Optimization::AuditEntry& v)
+        {
+            return r.Pod(v.timeMs) &&
+                   r.Str(v.action) &&
+                   r.Str(v.target) &&
+                   r.Str(v.detail) &&
+                   r.Bool(v.reverted);
         }
 
         inline void Write(Writer& w, const Optimization::OptimizerState& v)
@@ -1182,6 +1398,12 @@ namespace IPC
             w.Str(v.status);
             Write(w, v.benchmark);
             Write(w, v.frameProbe);
+            Write(w, v.ab);
+            Write(w, v.containment);
+            Write(w, v.stutter);
+            Write(w, v.energy);
+            Write(w, v.diagnostics);
+            w.Vec(v.audit, [](Writer& w, const auto& v) { Write(w, v); });
             w.Vec(v.processes, [](Writer& w, const auto& v) { Write(w, v); });
             w.Vec(v.cores, [](Writer& w, const auto& v) { Write(w, v); });
         }
@@ -1199,6 +1421,12 @@ namespace IPC
                    r.Str(v.status) &&
                    Read(r, v.benchmark) &&
                    Read(r, v.frameProbe) &&
+                   Read(r, v.ab) &&
+                   Read(r, v.containment) &&
+                   Read(r, v.stutter) &&
+                   Read(r, v.energy) &&
+                   Read(r, v.diagnostics) &&
+                   r.Vec(v.audit, [](Reader& r, auto& v) { return Read(r, v); }) &&
                    r.Vec(v.processes, [](Reader& r, auto& v) { return Read(r, v); }) &&
                    r.Vec(v.cores, [](Reader& r, auto& v) { return Read(r, v); });
         }
@@ -1257,6 +1485,42 @@ namespace IPC
     {
         Reader reader(data, size);
         return reader.Pod(command.durationMs) &&
+               reader.Remaining() == 0;
+    }
+
+    inline std::vector<std::uint8_t> Serialize(const AbCommand& command)
+    {
+        Writer writer;
+        writer.Pod(command.phaseSeconds);
+        writer.Bool(command.applyCandidate);
+        return writer.data;
+    }
+
+    inline bool Deserialize(
+        const std::uint8_t* data,
+        std::size_t size,
+        AbCommand& command)
+    {
+        Reader reader(data, size);
+        return reader.Pod(command.phaseSeconds) &&
+               reader.Bool(command.applyCandidate) &&
+               reader.Remaining() == 0;
+    }
+
+    inline std::vector<std::uint8_t> Serialize(const ToggleCommand& command)
+    {
+        Writer writer;
+        writer.Bool(command.enabled);
+        return writer.data;
+    }
+
+    inline bool Deserialize(
+        const std::uint8_t* data,
+        std::size_t size,
+        ToggleCommand& command)
+    {
+        Reader reader(data, size);
+        return reader.Bool(command.enabled) &&
                reader.Remaining() == 0;
     }
 

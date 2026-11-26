@@ -909,7 +909,8 @@ void Window::RenderRegionContent()
                         optimizer,
                         hasTopology,
                         hasOptimizer,
-                        serviceMode_.load());
+                        serviceMode_.load(),
+                        ServiceIssue());
 
         SetAppSettings(settings);
 
@@ -917,6 +918,29 @@ void Window::RenderRegionContent()
         {
             IPC::PipeClient client;
             client.StartBenchmark(4000);
+
+            scheduler_.Invalidate(
+                UI::Core::UiComponent::OptimizationPage);
+            RequestFrame();
+        }
+
+        if (command.startAb || command.stopAb ||
+            command.setExperimental || command.setEtw ||
+            command.setContainment)
+        {
+            IPC::PipeClient client;
+            if (command.startAb)
+                client.StartAb(60, command.applyCandidate);
+            if (command.stopAb)
+                client.StopAb();
+            if (command.setExperimental)
+                client.SetExperimentalProfile(
+                    command.experimentalEnabled);
+            if (command.setEtw)
+                client.SetEtwStutterProbe(command.etwEnabled);
+            if (command.setContainment)
+                client.SetContainment(
+                    command.containmentEnabled);
 
             scheduler_.Invalidate(
                 UI::Core::UiComponent::OptimizationPage);
@@ -1537,6 +1561,9 @@ void Window::ServiceClientLoop()
 
         if (client.GetState(remote))
         {
+            serviceIssue_.store(static_cast<int>(
+                IPC::ConnectionIssue::None));
+
             const bool wasServiceMode =
                 serviceMode_.exchange(true);
 
@@ -1573,6 +1600,7 @@ void Window::ServiceClientLoop()
             continue;
         }
 
+        serviceIssue_.store(static_cast<int>(client.LastIssue()));
         optimizerConfigSent_.store(false);
         forceApplyOnConnect_ = true;
         lastForegroundPid_ = 0xFFFFFFFFu;

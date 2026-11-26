@@ -59,6 +59,15 @@ namespace IPC
         std::thread acceptThread_;
     };
 
+    enum class ConnectionIssue : std::int32_t
+    {
+        None = 0,
+        NotInstalled,
+        VersionMismatch,
+        Timeout,
+        Other
+    };
+
     class PipeClient
     {
     public:
@@ -70,6 +79,17 @@ namespace IPC
         bool SetForegroundProcess(DWORD processId);
         bool StartBenchmark(
             std::uint32_t durationMs = 4000);
+        bool StartAb(
+            std::uint32_t phaseSeconds,
+            bool applyCandidate);
+        bool StopAb();
+        bool SetExperimentalProfile(bool enabled);
+        bool SetEtwStutterProbe(bool enabled);
+        bool SetContainment(bool enabled);
+
+        ConnectionIssue LastIssue() const { return lastIssue_; }
+        std::uint32_t RemoteVersion() const { return remoteVersion_; }
+        DWORD LastError() const { return lastError_; }
 
     private:
         bool RoundTrip(
@@ -77,5 +97,9 @@ namespace IPC
             ResponseType expected,
             const std::vector<std::uint8_t>& requestPayload,
             std::vector<std::uint8_t>& responsePayload);
+
+        ConnectionIssue lastIssue_ = ConnectionIssue::None;
+        std::uint32_t remoteVersion_ = 0;
+        DWORD lastError_ = ERROR_SUCCESS;
     };
 }

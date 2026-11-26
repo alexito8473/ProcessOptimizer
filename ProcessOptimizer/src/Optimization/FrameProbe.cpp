@@ -652,6 +652,19 @@ namespace Optimization
             result.sampleCount = sampleCount;
             result.maxMs = maxInterval;
             result.syncInterval = maxSync;
+            result.framesOver20Ms =
+                static_cast<std::uint32_t>(
+                    std::count_if(
+                        intervals.begin(), intervals.end(),
+                        [](double ms) { return ms > 20.0; }));
+            result.framesOver25Ms =
+                static_cast<std::uint32_t>(
+                    std::count_if(
+                        intervals.begin(), intervals.end(),
+                        [](double ms) { return ms > 25.0; }));
+            result.sampleWindowMs =
+                static_cast<std::uint64_t>(
+                    WindowSeconds * 1000);
 
             if (sampleCount < 30 || intervals.empty())
             {

@@ -27,6 +27,25 @@ namespace UI::Screens::Optimization
             return UI::Localization::Translate(language, text);
         }
 
+        const char* DisabledReason(
+            UI::Localization::Language language,
+            IPC::ConnectionIssue issue)
+        {
+            switch (issue)
+            {
+            case IPC::ConnectionIssue::VersionMismatch:
+                return T(language, Text::ConnectionVersion);
+            case IPC::ConnectionIssue::Timeout:
+                return T(language, Text::ConnectionTimeout);
+            case IPC::ConnectionIssue::NotInstalled:
+                return T(language, Text::ConnectionNotInstalled);
+            case IPC::ConnectionIssue::Other:
+                return T(language, Text::ConnectionOther);
+            default:
+                return T(language, Text::AbDisabledReason);
+            }
+        }
+
         Text VerdictText(FrameVerdict verdict)
         {
             switch (verdict)
@@ -382,7 +401,8 @@ namespace UI::Screens::Optimization
             bool serviceConnected,
             const UI::Theme::UiPalette& palette,
             UI::Localization::Language language,
-            OptimizationCommand& command)
+            OptimizationCommand& command,
+            IPC::ConnectionIssue issue)
         {
             UI::Widgets::SectionTitle(
                 T(language, Text::BenchmarkTitle),
@@ -406,19 +426,24 @@ namespace UI::Screens::Optimization
                     ImVec2(-1.0f, 0.0f),
                     T(language, Text::BenchmarkRunning));
             }
-            else if (!serviceConnected)
-            {
-                UI::Widgets::Badge(
-                    T(language,
-                      Text::OptimizationServiceRequired),
-                    palette.Warning,
-                    palette);
-            }
-            else if (UI::Widgets::SecondaryButton(
-                         T(language, Text::BenchmarkButton),
-                         palette))
+            // El boton siempre existe: si el servicio no esta conectado
+            // se muestra deshabilitado con el motivo real.
+            ImGui::BeginDisabled(!serviceConnected || running);
+            if (UI::Widgets::SecondaryButton(
+                    T(language, Text::BenchmarkButton),
+                    palette))
             {
                 command.startBenchmark = true;
+            }
+            ImGui::EndDisabled();
+
+            if (!serviceConnected)
+            {
+                ImGui::SameLine();
+                UI::Widgets::Badge(
+                    DisabledReason(language, issue),
+                    palette.Warning,
+                    palette);
             }
 
             if (!benchmark.statusText.empty())
@@ -1000,6 +1025,485 @@ namespace UI::Screens::Optimization
 
             UI::Widgets::EndCard();
         }
+
+        void RenderAb(
+            const ::Optimization::OptimizerState& optimizer,
+            const UI::Theme::UiPalette& palette,
+            UI::Localization::Language language,
+            bool serviceConnected,
+            OptimizationCommand& command,
+            IPC::ConnectionIssue issue)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::AbTitle), nullptr, palette);
+            UI::Widgets::BeginCard("OptimizerAb", 0.0f, palette);
+
+            const ::Optimization::AbResult& ab = optimizer.ab;
+
+            if (ab.running)
+            {
+                ImGui::ProgressBar(
+                    static_cast<float>(ab.progressPercent) /
+                        100.0f,
+                    ImVec2(-1.0f, 0.0f),
+                    ab.phase.c_str());
+            }
+
+            static bool applyCandidate = true;
+            ImGui::Checkbox(
+                T(language, Text::AbApplyCandidate),
+                &applyCandidate);
+
+            ImGui::BeginDisabled(!serviceConnected || ab.running);
+            if (UI::Widgets::SecondaryButton(
+                    T(language, Text::AbStart), palette))
+            {
+                command.startAb = true;
+                command.applyCandidate = applyCandidate;
+            }
+            ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            ImGui::BeginDisabled(!serviceConnected || !ab.running);
+            if (UI::Widgets::SecondaryButton(
+                    T(language, Text::AbStop), palette))
+            {
+                command.stopAb = true;
+            }
+            ImGui::EndDisabled();
+
+            if (!serviceConnected)
+            {
+                ImGui::SameLine();
+                UI::Widgets::Badge(
+                    DisabledReason(language, issue),
+                    palette.Warning, palette);
+            }
+
+            if (!ab.completed)
+            {
+                ImGui::Spacing();
+                UI::Widgets::MutedText(
+                    T(language, Text::AbNoData), palette);
+                UI::Widgets::EndCard();
+                return;
+            }
+
+            ImGui::Spacing();
+            ImGui::Text(
+                "%s: %s   %s: %u%%",
+                T(language, Text::AbPhase),
+                ab.phase.c_str(),
+                T(language, Text::AbProgress),
+                ab.progressPercent);
+
+            constexpr ImGuiTableFlags flags =
+                ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg;
+            if (ImGui::BeginTable("OptimizerAbTable", 8, flags))
+            {
+                ImGui::TableSetupColumn("");
+                ImGui::TableSetupColumn("p50");
+                ImGui::TableSetupColumn("p95");
+                ImGui::TableSetupColumn("p99");
+                ImGui::TableSetupColumn("FPS");
+                ImGui::TableSetupColumn(">20");
+                ImGui::TableSetupColumn(">25");
+                ImGui::TableSetupColumn(
+                    T(language, Text::AbCpuMs));
+                ImGui::TableHeadersRow();
+
+                const ::Optimization::FrameMeasurement* rows[]{
+                    &ab.baseline, &ab.candidate };
+                const char* names[]{
+                    T(language, Text::AbBaseline),
+                    T(language, Text::AbCandidate) };
+
+                for (int i = 0; i < 2; ++i)
+                {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(names[i]);
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text("%.1f", rows[i]->p50Ms);
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%.1f", rows[i]->p95Ms);
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::Text("%.1f", rows[i]->p99Ms);
+                    ImGui::TableSetColumnIndex(4);
+                    ImGui::Text("%.1f", rows[i]->fps);
+                    ImGui::TableSetColumnIndex(5);
+                    ImGui::Text("%u", rows[i]->framesOver20Ms);
+                    ImGui::TableSetColumnIndex(6);
+                    ImGui::Text("%u", rows[i]->framesOver25Ms);
+                    ImGui::TableSetColumnIndex(7);
+                    ImGui::Text("%.2f", rows[i]->cpuInPresentMs);
+                }
+                ImGui::EndTable();
+            }
+
+            ImGui::Spacing();
+            ImGui::Text(
+                "%s: %+.1f%%   %s: %+.1f%%",
+                T(language, Text::AbDeltaP95),
+                ab.p95DeltaPercent,
+                T(language, Text::AbDeltaP99),
+                ab.p99DeltaPercent);
+
+            if (!ab.verdict.empty())
+                ImGui::TextUnformatted(ab.verdict.c_str());
+
+            UI::Widgets::Badge(
+                T(language, ab.kept
+                    ? Text::AbKept
+                    : Text::AuditReverted),
+                ab.kept ? palette.Success : palette.Warning,
+                palette);
+
+            if (!ab.csvPath.empty())
+            {
+                ImGui::SameLine();
+                ImGui::Text(
+                    "%s: %s",
+                    T(language, Text::AbCsv),
+                    ab.csvPath.c_str());
+            }
+
+            UI::Widgets::EndCard();
+        }
+
+        void RenderContainment(
+            const ::Optimization::OptimizerState& optimizer,
+            const UI::Theme::UiPalette& palette,
+            UI::Localization::Language language,
+            bool serviceConnected,
+            OptimizationCommand& command)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::ContainmentTitle),
+                nullptr, palette);
+            UI::Widgets::BeginCard(
+                "OptimizerContainment", 0.0f, palette);
+
+            const ::Optimization::ContainmentSnapshot& state =
+                optimizer.containment;
+
+            ImGui::BeginDisabled(!serviceConnected);
+            if (UI::Widgets::ToggleButton(
+                    T(language, state.enabled
+                        ? Text::ContainmentDisable
+                        : Text::ContainmentEnable),
+                    state.enabled, palette))
+            {
+                command.setContainment = true;
+                command.containmentEnabled = !state.enabled;
+            }
+            ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            UI::Widgets::Badge(
+                T(language, state.enabled
+                    ? Text::ContainmentActive
+                    : Text::OptimizerDisabled),
+                state.enabled
+                    ? palette.Success
+                    : palette.TextMuted,
+                palette);
+
+            if (state.evidence)
+            {
+                ImGui::SameLine();
+                UI::Widgets::Badge(
+                    T(language, Text::ContainmentEvidence),
+                    palette.Warning, palette);
+            }
+
+            ImGui::Spacing();
+            ImGui::Text(
+                "%s: %u   %s: %u",
+                T(language, Text::ContainedProcesses),
+                state.containedProcesses,
+                T(language, Text::RevertedProcesses),
+                state.revertedProcesses);
+
+            if (!state.status.empty())
+                ImGui::TextUnformatted(state.status.c_str());
+
+            UI::Widgets::MutedText(
+                T(language, Text::ContainmentHint), palette);
+            UI::Widgets::EndCard();
+        }
+
+        void RenderStutter(
+            const ::Optimization::OptimizerState& optimizer,
+            const UI::Theme::UiPalette& palette,
+            UI::Localization::Language language,
+            bool serviceConnected,
+            OptimizationCommand& command)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::StutterTitle),
+                nullptr, palette);
+            UI::Widgets::BeginCard(
+                "OptimizerStutter", 0.0f, palette);
+
+            const ::Optimization::StutterSnapshot& state =
+                optimizer.stutter;
+
+            if (!state.available)
+            {
+                UI::Widgets::Badge(
+                    T(language, Text::FrameProbeNoData),
+                    palette.Warning, palette);
+            }
+
+            ImGui::BeginDisabled(!serviceConnected);
+            if (UI::Widgets::ToggleButton(
+                    T(language, state.etwActive
+                        ? Text::StutterEtwDisable
+                        : Text::StutterEtwEnable),
+                    state.etwActive, palette))
+            {
+                command.setEtw = true;
+                command.etwEnabled = !state.etwActive;
+            }
+            ImGui::EndDisabled();
+
+            if (state.available)
+            {
+                ImGui::Spacing();
+                ImGui::Text(
+                    T(language, Text::StutterCounters));
+                ImGui::Text(
+                    "CS %.0f/s   hard faults %.0f/s   "
+                    "DPC %.2f%%   ISR %.2f%%",
+                    state.contextSwitchesPerSec,
+                    state.hardFaultsPerSec,
+                    state.dpcPercent,
+                    state.interruptPercent);
+
+                if (!state.topSuspect.empty())
+                {
+                    ImGui::Text(
+                        "%s: %s   %s: %.0f%%",
+                        T(language, Text::StutterSuspect),
+                        state.topSuspect.c_str(),
+                        T(language, Text::StutterConfidence),
+                        state.confidence * 100.0);
+                }
+            }
+
+            if (!state.status.empty())
+                ImGui::TextUnformatted(state.status.c_str());
+
+            UI::Widgets::MutedText(
+                T(language, Text::StutterEtwHint), palette);
+            UI::Widgets::EndCard();
+        }
+
+        void RenderEnergy(
+            const ::Optimization::OptimizerState& optimizer,
+            const UI::Theme::UiPalette& palette,
+            UI::Localization::Language language,
+            bool serviceConnected,
+            OptimizationCommand& command)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::EnergyTitle),
+                nullptr, palette);
+            UI::Widgets::BeginCard(
+                "OptimizerEnergy", 0.0f, palette);
+
+            const ::Optimization::EnergySnapshot& state =
+                optimizer.energy;
+
+            if (!state.available)
+            {
+                UI::Widgets::Badge(
+                    T(language, Text::FrameProbeNoData),
+                    palette.Warning, palette);
+            }
+
+            const bool lockedByAb = optimizer.ab.running;
+            ImGui::BeginDisabled(!serviceConnected || lockedByAb);
+            if (UI::Widgets::ToggleButton(
+                    T(language, state.experimentalProfile
+                        ? Text::EnergyDisable
+                        : Text::EnergyEnable),
+                    state.experimentalProfile, palette))
+            {
+                command.setExperimental = true;
+                command.experimentalEnabled =
+                    !state.experimentalProfile;
+            }
+            ImGui::EndDisabled();
+
+            if (lockedByAb)
+            {
+                ImGui::SameLine();
+                UI::Widgets::Badge(
+                    T(language, Text::EnergyAbLocked),
+                    palette.Warning, palette);
+            }
+
+            if (state.available)
+            {
+                ImGui::Spacing();
+                ImGui::Text(
+                    "%s: %s",
+                    T(language, Text::EnergyScheme),
+                    state.activeSchemeName.c_str());
+                ImGui::Text(
+                    "%s: %.0f / %.0f   %s: %d",
+                    T(language, Text::EnergyCpuLimits),
+                    state.minProcessorState,
+                    state.maxProcessorState,
+                    T(language, Text::EnergyBoost),
+                    state.boostMode);
+                ImGui::Text(
+                    "%s: %s",
+                    T(language, Text::EnergyGpu),
+                    state.gpuPriority.c_str());
+            }
+
+            if (!state.status.empty())
+                ImGui::TextUnformatted(state.status.c_str());
+
+            UI::Widgets::MutedText(
+                T(language, Text::EnergyHint), palette);
+            UI::Widgets::EndCard();
+        }
+
+        void RenderDiagnostics(
+            const ::Optimization::OptimizerState& optimizer,
+            const UI::Theme::UiPalette& palette,
+            UI::Localization::Language language)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::DiagnosticsTitle),
+                nullptr, palette);
+            UI::Widgets::BeginCard(
+                "OptimizerDiagnostics", 0.0f, palette);
+
+            const ::Optimization::DiagnosticsSnapshot& state =
+                optimizer.diagnostics;
+
+            if (!state.available)
+            {
+                UI::Widgets::Badge(
+                    T(language, Text::FrameProbeNoData),
+                    palette.Warning, palette);
+                UI::Widgets::EndCard();
+                return;
+            }
+
+            const auto yesNo = [language](bool value)
+            {
+                return T(language, value
+                    ? Text::OptimizerEnabled
+                    : Text::OptimizerDisabled);
+            };
+
+            ImGui::Text(
+                "%s: %u MB   %s: %u KB",
+                T(language, Text::DiagnosticsMemory),
+                state.physicalMemoryMb,
+                T(language, Text::DiagnosticsLargePages),
+                state.largePageMinimumKb);
+            ImGui::Text(
+                "%s: %u   %s: %s   %s: %s",
+                T(language, Text::DiagnosticsNuma),
+                state.numaNodes,
+                T(language, Text::DiagnosticsCompression),
+                yesNo(state.memoryCompressionEnabled),
+                T(language, Text::DiagnosticsSysMain),
+                yesNo(state.sysMainEnabled));
+            ImGui::Text(
+                "%s: %s   %s: %u   L3: %u KB",
+                T(language, Text::DiagnosticsBypassIo),
+                yesNo(state.bypassIoSupported),
+                T(language, Text::L3),
+                state.l3Domains,
+                state.hotL3CacheKb);
+
+            if (!state.notes.empty())
+            {
+                ImGui::Spacing();
+                UI::Widgets::MutedText(
+                    state.notes.c_str(), palette);
+            }
+            UI::Widgets::MutedText(
+                T(language, Text::DiagnosticsHint), palette);
+            UI::Widgets::EndCard();
+        }
+
+        void RenderAudit(
+            const ::Optimization::OptimizerState& optimizer,
+            const UI::Theme::UiPalette& palette,
+            UI::Localization::Language language)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::AuditTitle),
+                nullptr, palette);
+            UI::Widgets::BeginCard(
+                "OptimizerAudit", 0.0f, palette);
+
+            const auto& entries = optimizer.audit;
+            if (entries.empty())
+            {
+                UI::Widgets::MutedText(
+                    T(language, Text::AuditEmpty), palette);
+                UI::Widgets::EndCard();
+                return;
+            }
+
+            constexpr ImGuiTableFlags flags =
+                ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg;
+            if (ImGui::BeginTable("OptimizerAuditTable", 5, flags))
+            {
+                ImGui::TableSetupColumn(
+                    T(language, Text::AuditTime),
+                    ImGuiTableColumnFlags_WidthFixed, 72.0f);
+                ImGui::TableSetupColumn(
+                    T(language, Text::AuditAction));
+                ImGui::TableSetupColumn(
+                    T(language, Text::AuditTarget));
+                ImGui::TableSetupColumn(
+                    T(language, Text::AuditDetail));
+                ImGui::TableSetupColumn(
+                    T(language, Text::AuditReverted),
+                    ImGuiTableColumnFlags_WidthFixed, 84.0f);
+                ImGui::TableHeadersRow();
+
+                std::size_t shown = 0;
+                for (auto it = entries.rbegin();
+                     it != entries.rend() && shown < 12;
+                     ++it, ++shown)
+                {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text(
+                        "%llu s",
+                        static_cast<unsigned long long>(
+                            it->timeMs / 1000));
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TextUnformatted(it->action.c_str());
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::TextUnformatted(it->target.c_str());
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::TextUnformatted(it->detail.c_str());
+                    ImGui::TableSetColumnIndex(4);
+                    if (it->reverted)
+                    {
+                        UI::Widgets::Badge(
+                            T(language, Text::AuditReverted),
+                            palette.Success, palette);
+                    }
+                }
+                ImGui::EndTable();
+            }
+
+            UI::Widgets::EndCard();
+        }
     }
 
     OptimizationCommand OptimizationScreen::Render(
@@ -1010,7 +1514,8 @@ namespace UI::Screens::Optimization
         const ::Optimization::OptimizerState& optimizer,
         bool hasTopology,
         bool hasOptimizer,
-        bool serviceConnected)
+        bool serviceConnected,
+        IPC::ConnectionIssue serviceIssue)
     {
         OptimizationCommand command;
         command.enabled = settings.optimizerEnabled;
@@ -1040,7 +1545,45 @@ namespace UI::Screens::Optimization
             serviceConnected,
             palette,
             language,
+            command,
+            serviceIssue);
+
+        UI::Widgets::SectionTitle(
+            T(language, Text::AdvancedTitle),
+            nullptr, palette);
+
+        RenderAb(
+            optimizer,
+            palette,
+            language,
+            serviceConnected,
+            command,
+            serviceIssue);
+
+        RenderContainment(
+            optimizer,
+            palette,
+            language,
+            serviceConnected,
             command);
+
+        RenderStutter(
+            optimizer,
+            palette,
+            language,
+            serviceConnected,
+            command);
+
+        RenderEnergy(
+            optimizer,
+            palette,
+            language,
+            serviceConnected,
+            command);
+
+        RenderDiagnostics(optimizer, palette, language);
+
+        RenderAudit(optimizer, palette, language);
 
         RenderTopology(
             topology,

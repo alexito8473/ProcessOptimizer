@@ -242,6 +242,17 @@ namespace Service
             state_.optimizer.benchmark;
         const Optimization::FrameProbeSnapshot previousFrameProbe =
             state_.optimizer.frameProbe;
+        const Optimization::AbResult previousAb = state_.optimizer.ab;
+        const Optimization::ContainmentSnapshot previousContainment =
+            state_.optimizer.containment;
+        const Optimization::StutterSnapshot previousStutter =
+            state_.optimizer.stutter;
+        const Optimization::EnergySnapshot previousEnergy =
+            state_.optimizer.energy;
+        const Optimization::DiagnosticsSnapshot previousDiagnostics =
+            state_.optimizer.diagnostics;
+        const std::vector<Optimization::AuditEntry> previousAudit =
+            state_.optimizer.audit;
 
         state_.optimizer = optimizer;
         if (!state_.optimizer.benchmark.profile.HasData() &&
@@ -249,6 +260,15 @@ namespace Service
         {
             state_.optimizer.benchmark = previousBenchmark;
         }
+
+        // El orquestador no publica estas secciones: conservarlas evita
+        // que un tick de CPU borre A/B, energia, diagnostico o auditoria.
+        state_.optimizer.ab = previousAb;
+        state_.optimizer.containment = previousContainment;
+        state_.optimizer.stutter = previousStutter;
+        state_.optimizer.energy = previousEnergy;
+        state_.optimizer.diagnostics = previousDiagnostics;
+        state_.optimizer.audit = previousAudit;
 
         // La sonda publica fuera del orquestador. Conservar el ultimo
         // resultado evita que un tick del orquestador borre la medicion.
@@ -284,6 +304,81 @@ namespace Service
         std::lock_guard<std::mutex> lock(mutex_);
 
         state_.optimizer.frameProbe = frameProbe;
+        state_.hasOptimizer = true;
+        state_.changedMask = ChangeMask::Optimization;
+        ++state_.sequence;
+        state_.timestampMs = NowMs();
+        return ChangeMask::Optimization;
+    }
+
+    std::uint32_t MonitorState::SetAb(
+        const Optimization::AbResult& ab)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        state_.optimizer.ab = ab;
+        state_.hasOptimizer = true;
+        state_.changedMask = ChangeMask::Optimization;
+        ++state_.sequence;
+        state_.timestampMs = NowMs();
+        return ChangeMask::Optimization;
+    }
+
+    std::uint32_t MonitorState::SetContainment(
+        const Optimization::ContainmentSnapshot& containment)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        state_.optimizer.containment = containment;
+        state_.hasOptimizer = true;
+        state_.changedMask = ChangeMask::Optimization;
+        ++state_.sequence;
+        state_.timestampMs = NowMs();
+        return ChangeMask::Optimization;
+    }
+
+    std::uint32_t MonitorState::SetStutter(
+        const Optimization::StutterSnapshot& stutter)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        state_.optimizer.stutter = stutter;
+        state_.hasOptimizer = true;
+        state_.changedMask = ChangeMask::Optimization;
+        ++state_.sequence;
+        state_.timestampMs = NowMs();
+        return ChangeMask::Optimization;
+    }
+
+    std::uint32_t MonitorState::SetEnergy(
+        const Optimization::EnergySnapshot& energy)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        state_.optimizer.energy = energy;
+        state_.hasOptimizer = true;
+        state_.changedMask = ChangeMask::Optimization;
+        ++state_.sequence;
+        state_.timestampMs = NowMs();
+        return ChangeMask::Optimization;
+    }
+
+    std::uint32_t MonitorState::SetDiagnostics(
+        const Optimization::DiagnosticsSnapshot& diagnostics)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        state_.optimizer.diagnostics = diagnostics;
+        state_.hasOptimizer = true;
+        state_.changedMask = ChangeMask::Optimization;
+        ++state_.sequence;
+        state_.timestampMs = NowMs();
+        return ChangeMask::Optimization;
+    }
+
+    std::uint32_t MonitorState::AddAudit(
+        const Optimization::AuditEntry& entry)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        state_.optimizer.audit.push_back(entry);
+        if (state_.optimizer.audit.size() > 100)
+            state_.optimizer.audit.erase(
+                state_.optimizer.audit.begin());
         state_.hasOptimizer = true;
         state_.changedMask = ChangeMask::Optimization;
         ++state_.sequence;

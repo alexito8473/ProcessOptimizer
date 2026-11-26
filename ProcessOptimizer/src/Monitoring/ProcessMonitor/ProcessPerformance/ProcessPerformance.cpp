@@ -72,6 +72,7 @@ void ProcessPerformance::Update(ProcessSnapshot& snapshot)
                 FileTimeToUInt64(userTime);
 
             process.cpuTime100ns = currentKernel + currentUser;
+            process.startTime100ns = FileTimeToUInt64(creationTime);
 
             auto& previous = m_previousSamples[process.processId];
 

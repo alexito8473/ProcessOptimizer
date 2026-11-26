@@ -330,6 +330,11 @@ namespace IPC
         case Request::SetOptimizerConfig:
         case Request::SetForegroundProcess:
         case Request::StartBenchmark:
+        case Request::StartAb:
+        case Request::StopAb:
+        case Request::SetExperimentalProfile:
+        case Request::SetEtwStutterProbe:
+        case Request::SetContainment:
         {
             const bool handled =
                 handler_ &&
@@ -443,12 +448,82 @@ namespace IPC
             responsePayload);
     }
 
+    bool PipeClient::StartAb(
+        std::uint32_t phaseSeconds,
+        bool applyCandidate)
+    {
+        AbCommand command;
+        command.phaseSeconds = phaseSeconds;
+        command.applyCandidate = applyCandidate;
+
+        std::vector<std::uint8_t> responsePayload;
+        return RoundTrip(
+            Request::StartAb,
+            ResponseType::Ack,
+            Serialize(command),
+            responsePayload);
+    }
+
+    bool PipeClient::StopAb()
+    {
+        std::vector<std::uint8_t> requestPayload;
+        std::vector<std::uint8_t> responsePayload;
+        return RoundTrip(
+            Request::StopAb,
+            ResponseType::Ack,
+            requestPayload,
+            responsePayload);
+    }
+
+    bool PipeClient::SetExperimentalProfile(bool enabled)
+    {
+        ToggleCommand command;
+        command.enabled = enabled;
+
+        std::vector<std::uint8_t> responsePayload;
+        return RoundTrip(
+            Request::SetExperimentalProfile,
+            ResponseType::Ack,
+            Serialize(command),
+            responsePayload);
+    }
+
+    bool PipeClient::SetEtwStutterProbe(bool enabled)
+    {
+        ToggleCommand command;
+        command.enabled = enabled;
+
+        std::vector<std::uint8_t> responsePayload;
+        return RoundTrip(
+            Request::SetEtwStutterProbe,
+            ResponseType::Ack,
+            Serialize(command),
+            responsePayload);
+    }
+
+    bool PipeClient::SetContainment(bool enabled)
+    {
+        ToggleCommand command;
+        command.enabled = enabled;
+
+        std::vector<std::uint8_t> responsePayload;
+        return RoundTrip(
+            Request::SetContainment,
+            ResponseType::Ack,
+            Serialize(command),
+            responsePayload);
+    }
+
     bool PipeClient::RoundTrip(
         Request request,
         ResponseType expected,
         const std::vector<std::uint8_t>& requestPayload,
         std::vector<std::uint8_t>& responsePayload)
     {
+        lastIssue_ = ConnectionIssue::None;
+        remoteVersion_ = 0;
+        lastError_ = ERROR_SUCCESS;
+
         HANDLE pipe = CreateFileW(
             PipeName,
             GENERIC_READ | GENERIC_WRITE,
@@ -459,7 +534,14 @@ namespace IPC
             nullptr);
 
         if (pipe == INVALID_HANDLE_VALUE)
+        {
+            lastError_ = GetLastError();
+            lastIssue_ =
+                lastError_ == ERROR_FILE_NOT_FOUND
+                    ? ConnectionIssue::NotInstalled
+                    : ConnectionIssue::Other;
             return false;
+        }
 
         DWORD mode = PIPE_READMODE_MESSAGE;
         SetNamedPipeHandleState(
@@ -493,6 +575,16 @@ namespace IPC
             ok = ReadExact(
                 pipe, &header, sizeof(header));
         }
+        if (!ok)
+            lastError_ = GetLastError();
+
+        if (ok &&
+            header.magic == ProtocolMagic &&
+            header.version != ProtocolVersion)
+        {
+            remoteVersion_ = header.version;
+            lastIssue_ = ConnectionIssue::VersionMismatch;
+        }
 
         if (ok &&
             (header.magic != ProtocolMagic ||
@@ -518,10 +610,20 @@ namespace IPC
                 pipe, responsePayload.data(),
                 static_cast<DWORD>(
                     responsePayload.size()));
+            if (!ok)
+                lastError_ = GetLastError();
         }
         else
         {
             responsePayload.clear();
+        }
+
+        if (!ok && lastIssue_ == ConnectionIssue::None)
+        {
+            lastIssue_ =
+                lastError_ == ERROR_SEM_TIMEOUT
+                    ? ConnectionIssue::Timeout
+                    : ConnectionIssue::Other;
         }
 
         CloseHandle(pipe);
