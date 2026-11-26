@@ -125,8 +125,11 @@ namespace Optimization
             std::lock_guard<std::mutex> lock(mutex_);
             // Sin A/B positivo o sin identidad de primer plano/juego no se
             // toca ningun proceso: la evidencia por si sola no autoriza.
+            // Con que haya al menos una identidad valida (primer plano o
+            // juego) se puede excluir al proceso activo. Antes se exigian
+            // las dos y la contencion quedaba bloqueada en muchos equipos.
             const bool identityValid =
-                foregroundPid != 0 && gamePid != 0;
+                foregroundPid != 0 || gamePid != 0;
             if (!enabled_ || !abValidated_ || !identityValid)
             {
                 if (!backups_.empty())
@@ -287,47 +290,48 @@ namespace Optimization
 
         PROCESS_POWER_THROTTLING_STATE power{};
         power.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-        if (!GetProcessInformation(
+        if (GetProcessInformation(
                 handle, ProcessPowerThrottling,
                 &power, sizeof(power)))
         {
-            // Sin backup no se aplica nada: la accion debe ser reversible.
-            CloseHandle(handle);
-            return false;
-        }
-        backup.hasPower = true;
-        backup.power = power;
+            backup.hasPower = true;
+            backup.power = power;
 
-        PROCESS_POWER_THROTTLING_STATE throttled{};
-        throttled.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-        throttled.ControlMask =
-            PROCESS_POWER_THROTTLING_EXECUTION_SPEED |
-            PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
-        throttled.StateMask =
-            PROCESS_POWER_THROTTLING_EXECUTION_SPEED |
-            PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
-        applied = SetProcessInformation(
-            handle, ProcessPowerThrottling,
-            &throttled, sizeof(throttled)) != FALSE;
+            PROCESS_POWER_THROTTLING_STATE throttled{};
+            throttled.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+            throttled.ControlMask =
+                PROCESS_POWER_THROTTLING_EXECUTION_SPEED |
+                PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+            throttled.StateMask =
+                PROCESS_POWER_THROTTLING_EXECUTION_SPEED |
+                PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+            if (SetProcessInformation(
+                    handle, ProcessPowerThrottling,
+                    &throttled, sizeof(throttled)))
+            {
+                applied = true;
+            }
+        }
+        // Si no se pudo leer/escribir power throttling (proceso protegido
+        // o version antigua), se sigue con las demas mitigaciones; la
+        // accion sigue siendo reversible para las que si se aplicaron.
 
         MEMORY_PRIORITY_INFORMATION memory{};
         memory.MemoryPriority = MEMORY_PRIORITY_NORMAL;
-        if (!GetProcessInformation(
+        if (GetProcessInformation(
                 handle, ProcessMemoryPriority,
                 &memory, sizeof(memory)))
         {
-            CloseHandle(handle);
-            return false;
-        }
-        backup.hasMemory = true;
-        backup.memoryPriority = memory.MemoryPriority;
-        MEMORY_PRIORITY_INFORMATION low{};
-        low.MemoryPriority = MEMORY_PRIORITY_LOW;
-        if (SetProcessInformation(
-                handle, ProcessMemoryPriority,
-                &low, sizeof(low)))
-        {
-            applied = true;
+            backup.hasMemory = true;
+            backup.memoryPriority = memory.MemoryPriority;
+            MEMORY_PRIORITY_INFORMATION low{};
+            low.MemoryPriority = MEMORY_PRIORITY_LOW;
+            if (SetProcessInformation(
+                    handle, ProcessMemoryPriority,
+                    &low, sizeof(low)))
+            {
+                applied = true;
+            }
         }
 
         const int currentPriority = GetPriorityClass(handle);

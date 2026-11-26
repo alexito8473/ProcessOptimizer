@@ -1379,11 +1379,18 @@ void Window::SendForegroundProcess(
         processId = 0;
     }
 
-    if (processId == lastForegroundPid_)
+    // El servicio invalida la identidad de primer plano tras 5 s sin
+    // refresco. Reenviar periodicamente aunque no cambie el PID.
+    const bool stale =
+        GetTickCount64() - lastForegroundSendMs_ > 2000;
+    if (processId == lastForegroundPid_ && !stale)
         return;
 
     if (client.SetForegroundProcess(processId))
+    {
         lastForegroundPid_ = processId;
+        lastForegroundSendMs_ = GetTickCount64();
+    }
 }
 
 void Window::ApplyRemoteState(const IPC::State& state)

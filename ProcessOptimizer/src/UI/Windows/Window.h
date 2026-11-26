@@ -218,4 +218,5 @@ private:
     std::atomic<bool> optimizerConfigSent_{ false };
     // Centinela: obliga a enviar el primer PID (incluso 0) tras reconectar.
     DWORD lastForegroundPid_ = 0xFFFFFFFFu;
+    std::uint64_t lastForegroundSendMs_ = 0;
 };
