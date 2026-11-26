@@ -21,13 +21,13 @@ namespace IPC
     inline constexpr wchar_t PipeName[] =
         L"\\\\.\\pipe\\ProcessOptimizer.Monitor";
     inline constexpr std::uint32_t ProtocolMagic = 0x504F4D31; // "POM1"
-    inline constexpr std::uint32_t ProtocolVersion = 9;
+    inline constexpr std::uint32_t ProtocolVersion = 10;
 
 // Version comun de los tres componentes. Cada binario reporta la suya; si
 // difieren, la instalacion esta mezclada y hay que reinstalar.
-inline constexpr const char* UiVersion = "1.2.0";
-inline constexpr const char* ServiceVersion = "1.2.0";
-inline constexpr const char* TrayVersion = "1.2.0";
+inline constexpr const char* UiVersion = "1.3.0";
+inline constexpr const char* ServiceVersion = "1.3.0";
+inline constexpr const char* TrayVersion = "1.3.0";
 
     enum class Request : std::uint32_t
     {

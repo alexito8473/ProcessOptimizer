@@ -325,19 +325,17 @@ namespace UI::Theme
 
     int ParseOptimizerMode(const std::string& value)
     {
-        if (value == "gaming")
+        if (value == "balanced" ||
+            value == "gaming" ||
+            value == "multitasking")
             return 1;
-        if (value == "multitasking")
-            return 2;
         return 0;
     }
 
     const char* OptimizerModeToString(int mode)
     {
         if (mode == 1)
-            return "gaming";
-        if (mode == 2)
-            return "multitasking";
+            return "balanced";
         return "off";
     }
 

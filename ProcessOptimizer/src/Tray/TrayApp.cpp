@@ -113,10 +113,8 @@ namespace Tray
             {
             case Optimization::OptimizerMode::Off:
                 return L"Off";
-            case Optimization::OptimizerMode::Gaming:
-                return L"Gaming";
-            case Optimization::OptimizerMode::Multitasking:
-                return L"Multitasking";
+            case Optimization::OptimizerMode::Balanced:
+                return L"Balanceado";
             default:
                 return L"Desconocido";
             }

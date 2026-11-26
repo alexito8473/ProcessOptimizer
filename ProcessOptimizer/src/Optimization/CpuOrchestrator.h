@@ -182,7 +182,6 @@ namespace Optimization
 
         void WorkerLoop();
         void Tick();
-        void BuildPlanAndApply();
         void RestoreAll();
 
         bool RestoreThread(

@@ -107,10 +107,8 @@ namespace UI::Screens::Optimization
         {
             switch (mode)
             {
-            case OptimizerMode::Gaming:
-                return T(language, Text::OptimizerGaming);
-            case OptimizerMode::Multitasking:
-                return T(language, Text::OptimizerMultitasking);
+            case OptimizerMode::Balanced:
+                return T(language, Text::OptimizerBalanced);
             case OptimizerMode::Off:
             default:
                 return T(language, Text::OptimizerOff);
@@ -204,6 +202,7 @@ namespace UI::Screens::Optimization
                 if (enabled)
                 {
                     settings.optimizerEnabled = false;
+                    settings.optimizerMode = 0;
                     command.changed = true;
                 }
                 else if (profileReady)
@@ -217,24 +216,19 @@ namespace UI::Screens::Optimization
 
             ImGui::SameLine();
 
-            const char* modes[]{
-                T(language, Text::OptimizerOff),
-                T(language, Text::OptimizerGaming),
-                T(language, Text::OptimizerMultitasking)
-            };
-
-            int selected = settings.optimizerMode;
-            if (UI::Widgets::SegmentedControl(
-                    "OptimizerMode",
-                    modes,
-                    3,
-                    selected,
-                    palette))
+            if (settings.optimizerEnabled)
             {
-                settings.optimizerMode = selected;
-                settings.optimizerEnabled =
-                    selected != 0 && profileReady;
-                command.changed = true;
+                UI::Widgets::Badge(
+                    T(language, Text::OptimizerBalanced),
+                    palette.Success,
+                    palette);
+            }
+            else
+            {
+                UI::Widgets::Badge(
+                    T(language, Text::OptimizerOff),
+                    palette.TextMuted,
+                    palette);
             }
 
             if (!profileReady)

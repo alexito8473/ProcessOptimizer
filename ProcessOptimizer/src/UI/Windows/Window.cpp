@@ -1355,7 +1355,7 @@ bool Window::ApplySavedOptimizerConfig(
 
     const Optimization::OptimizerMode mode =
         static_cast<Optimization::OptimizerMode>(
-            (std::min)(2, (std::max)(0, modeValue)));
+            (std::min)(1, (std::max)(0, modeValue)));
 
     return client.SetOptimizerConfig(
         enabled && mode != Optimization::OptimizerMode::Off,

@@ -330,6 +330,22 @@ namespace Optimization
             applied = true;
         }
 
+        const int currentPriority = GetPriorityClass(handle);
+        if (currentPriority != 0)
+        {
+            backup.hasPriority = true;
+            backup.priority = currentPriority;
+
+            // ProBalance-style: bajar solo procesos de segundo plano
+            // ruidosos. Nunca se sube prioridad ni se toca el juego.
+            if (currentPriority > BELOW_NORMAL_PRIORITY_CLASS &&
+                SetPriorityClass(
+                    handle, BELOW_NORMAL_PRIORITY_CLASS))
+            {
+                applied = true;
+            }
+        }
+
         std::vector<DWORD> coldSets;
         if (BuildColdCpuSets(topology, coldSets))
         {
@@ -366,8 +382,8 @@ namespace Optimization
             entry.action = "Contencion de segundo plano";
             entry.target = TargetText(key.processId, key.startTime, backup.name);
             entry.detail =
-                "EcoQoS + prioridad de memoria baja"
-                "( + CPU Sets frios si aplica)";
+                "EcoQoS + prioridad baja (ProBalance) + "
+                "memoria baja + CPU Sets frios si aplica";
             auditPublisher_(entry);
         }
         return true;
@@ -394,6 +410,11 @@ namespace Optimization
                 SetProcessInformation(
                     handle, ProcessMemoryPriority,
                     &memory, sizeof(memory));
+            }
+
+            if (backup.hasPriority)
+            {
+                SetPriorityClass(handle, backup.priority);
             }
 
             if (backup.hasPower)

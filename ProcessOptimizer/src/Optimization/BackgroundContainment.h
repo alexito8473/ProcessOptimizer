@@ -66,6 +66,8 @@ namespace Optimization
             bool hasPower = false;
             ULONG memoryPriority = MEMORY_PRIORITY_NORMAL;
             bool hasMemory = false;
+            int priority = 0;
+            bool hasPriority = false;
             std::vector<DWORD> cpuSets;
             bool hasCpuSets = false;
         };

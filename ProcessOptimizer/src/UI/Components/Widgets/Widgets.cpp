@@ -107,10 +107,16 @@ namespace UI::Widgets
         ImGui::PushStyleVar(
             ImGuiStyleVar_ChildBorderSize, 1.0f);
 
+        const ImGuiChildFlags flags =
+            height <= 0.0f
+                ? (ImGuiChildFlags_Borders |
+                   ImGuiChildFlags_AutoResizeY)
+                : ImGuiChildFlags_Borders;
+
         ImGui::BeginChild(
             id,
             ImVec2(0.0f, height),
-            ImGuiChildFlags_Borders);
+            flags);
 
         ImGui::PopStyleVar();
     }

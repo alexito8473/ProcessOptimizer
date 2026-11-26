@@ -26,8 +26,7 @@ namespace Optimization
     enum class OptimizerMode : std::int32_t
     {
         Off = 0,
-        Gaming = 1,
-        Multitasking = 2
+        Balanced = 1
     };
 
     enum class PlanStatus : std::int32_t
