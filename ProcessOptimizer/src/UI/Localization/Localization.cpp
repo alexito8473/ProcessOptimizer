@@ -260,7 +260,7 @@ namespace UI::Localization
             "Service version",
             "Tray version",
             "How it works",
-            "The optimizer only acts on background processes with evidence. It duplicates the power plan, raises GPU priority only in the experimental profile, and reverts everything when A/B is negative or the profile is disabled. The game is never given hard affinity or priority changes.",
+            "Only background processes with evidence are contained. The power plan is duplicated, GPU priority rises only in the experimental profile, and everything reverts if A/B is negative. The game is never changed.",
             "Show details",
             "Hide details"
         }};
@@ -514,7 +514,7 @@ namespace UI::Localization
             "Version del servicio",
             "Version del Tray",
             "Como funciona",
-            "El optimizador solo actua sobre procesos de segundo plano con evidencia. Duplica el plan de energia, sube la prioridad GPU solo en el perfil experimental y revierte todo si el A/B es negativo o se desactiva el perfil. El juego nunca recibe afinidad dura ni cambios de prioridad.",
+            "Solo se contienen procesos de segundo plano con evidencia. Se duplica el plan de energia, la prioridad GPU sube solo en el perfil experimental y todo se revierte si el A/B es negativo. El juego no se toca.",
             "Mostrar detalles",
             "Ocultar detalles"
         }};
