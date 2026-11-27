@@ -28,7 +28,13 @@ namespace Optimization
                 L"svchost.exe", L" MsMpEng.exe", L"msmpeng.exe",
                 L"nissrv.exe", L"securityhealthservice.exe",
                 L"processoptimizer.service.exe", L"processoptimizer.ui.exe",
-                L"processoptimizer.tray.exe"
+                L"processoptimizer.tray.exe",
+                L"discord.exe", L"discordcanary.exe",
+                L"discordptb.exe", L"discorddevelopment.exe",
+                L"zoom.exe", L"teams.exe", L"ms-teams.exe",
+                L"slack.exe", L"skype.exe", L"obs64.exe",
+                L"obs32.exe", L"voicemeeter.exe",
+                L"voicemeeterpro.exe"
             };
 
             for (const wchar_t* candidate : protectedNames)
@@ -177,13 +183,20 @@ namespace Optimization
             if (stutter.topSuspect.empty())
             {
                 ++quietTicks_;
-                if (quietTicks_ >= 3 && !backups_.empty())
+                const std::uint64_t nowMs = GetTickCount64();
+                const bool holdActive = (lastContainMs_ != 0 &&
+                    (nowMs - lastContainMs_) < 8000);
+                if (quietTicks_ >= 3 && !backups_.empty() && !holdActive)
                 {
                     for (const auto& entry : backups_)
                         Restore(entry.first, entry.second);
                     backups_.clear();
                     contained_ = 0;
                     status_ = "Sin evidencia: contencion retirada";
+                }
+                else if (holdActive && !backups_.empty())
+                {
+                    status_ = "Sin evidencia reciente: manteniendo contencion";
                 }
                 else if (backups_.empty())
                 {
@@ -194,6 +207,7 @@ namespace Optimization
             }
 
             quietTicks_ = 0;
+            const std::uint64_t nowMs = GetTickCount64();
             std::set<InstanceKey> wanted;
 
             for (const auto& process : snapshot.processes)
@@ -246,10 +260,13 @@ namespace Optimization
 
             for (auto it = backups_.begin(); it != backups_.end();)
             {
-                if (wanted.count(it->first) == 0)
+                const bool holdExpired =
+                    (nowMs - it->second.containedAtMs) >= 8000;
+                if (wanted.count(it->first) == 0 && holdExpired)
                 {
                     Restore(it->first, it->second);
                     it = backups_.erase(it);
+                    lastRestoreMs_ = nowMs;
                 }
                 else
                 {
@@ -257,6 +274,8 @@ namespace Optimization
                 }
             }
 
+            const bool cooldownActive = (lastRestoreMs_ != 0 &&
+                (nowMs - lastRestoreMs_) < 5000);
             std::uint32_t newlyContained = 0;
             for (const ProcessInfo* process : candidates)
             {
@@ -264,8 +283,11 @@ namespace Optimization
                     process->processId, process->startTime100ns };
                 if (backups_.find(key) != backups_.end())
                     continue;
+                if (cooldownActive)
+                    continue;
                 if (Contain(*process, topology))
                     ++newlyContained;
+                    lastContainMs_ = nowMs;
             }
 
             contained_ = static_cast<std::uint32_t>(backups_.size());
@@ -330,11 +352,9 @@ namespace Optimization
             PROCESS_POWER_THROTTLING_STATE throttled{};
             throttled.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
             throttled.ControlMask =
-                PROCESS_POWER_THROTTLING_EXECUTION_SPEED |
-                PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+                PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
             throttled.StateMask =
-                PROCESS_POWER_THROTTLING_EXECUTION_SPEED |
-                PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+                PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
             if (SetProcessInformation(
                     handle, ProcessPowerThrottling,
                     &throttled, sizeof(throttled)))
@@ -408,6 +428,7 @@ namespace Optimization
         if (!applied)
             return false;
 
+        backup.containedAtMs = GetTickCount64();
         backups_[key] = backup;
         if (auditPublisher_)
         {

@@ -65,6 +65,7 @@ namespace Optimization
         struct Backup
         {
             std::wstring name;
+            std::uint64_t containedAtMs = 0;
             PROCESS_POWER_THROTTLING_STATE power{};
             bool hasPower = false;
             ULONG memoryPriority = MEMORY_PRIORITY_NORMAL;
@@ -91,6 +92,8 @@ namespace Optimization
         bool enabled_ = false;
         bool abValidated_ = false;
         bool safeMode_ = false;
+        std::uint64_t lastRestoreMs_ = 0;
+        std::uint64_t lastContainMs_ = 0;
         int quietTicks_ = 0;
         std::uint32_t contained_ = 0;
         std::uint32_t reverted_ = 0;

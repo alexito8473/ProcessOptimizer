@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <fstream>
+#include <ctime>
+#include <cstdio>
 #include <utility>
 
 namespace Service
@@ -144,6 +147,28 @@ namespace Service
                 [this](const Optimization::AuditEntry& entry)
                 {
                     state_.AddAudit(entry);
+                    std::ofstream auditFile(
+                        "C:\\ProgramData\\ProcessOptimizer\\" 
+                        "containment-audit.log",
+                        std::ios::app);
+                    if (auditFile)
+                    {
+                        std::time_t now = std::time(nullptr);
+                        std::tm tm{};
+                        localtime_s(&tm, &now);
+                        char timeBuf[64]{};
+                        std::strftime(
+                            timeBuf, sizeof(timeBuf),
+                            "%Y-%m-%d %H:%M:%S",
+                            &tm);
+                        auditFile << timeBuf << " | "
+                                  << entry.action << " | "
+                                  << entry.target << " | "
+                                  << entry.detail;
+                        if (entry.reverted)
+                            auditFile << " | REVERTIDO";
+                        auditFile << "\n";
+                    }
                 });
         // Activada por defecto, pero solo interviene si el correlacionador
         // encuentra evidencia de interferencia con el frame time.
