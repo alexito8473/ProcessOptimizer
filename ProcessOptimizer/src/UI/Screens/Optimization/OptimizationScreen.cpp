@@ -233,7 +233,7 @@ namespace UI::Screens::Optimization
             {
                 ImGui::Spacing();
                 UI::Widgets::MutedText(
-                    T(language, Text::BenchmarkRequired),
+                    "Sin perfil de juego: se usara modo general.",
                     palette);
             }
 
@@ -1057,6 +1057,90 @@ namespace UI::Screens::Optimization
             UI::Widgets::EndCard();
         }
 
+        void RenderAdvancedControls(
+            const ::Optimization::OptimizerState& optimizer,
+            const UI::Theme::UiPalette& palette,
+            UI::Localization::Language language,
+            bool serviceConnected,
+            OptimizationCommand& command)
+        {
+            UI::Widgets::SectionTitle(
+                T(language, Text::AdvancedTitle),
+                nullptr, palette);
+            UI::Widgets::BeginCard(
+                "OptimizerAdvancedControls", 0.0f, palette);
+
+            // Contencion manual
+            const ::Optimization::ContainmentSnapshot& c =
+                optimizer.containment;
+            ImGui::BeginDisabled(!serviceConnected);
+            if (UI::Widgets::ToggleButton(
+                    T(language, c.enabled
+                        ? Text::ContainmentDisable
+                        : Text::ContainmentEnable),
+                    c.enabled, palette))
+            {
+                command.setContainment = true;
+                command.containmentEnabled = !c.enabled;
+            }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            UI::Widgets::Badge(
+                T(language, c.enabled
+                    ? Text::ContainmentActive
+                    : Text::OptimizerDisabled),
+                c.enabled
+                    ? palette.Success
+                    : palette.TextMuted,
+                palette);
+
+            ImGui::Spacing();
+
+            // ETW manual
+            const ::Optimization::StutterSnapshot& s =
+                optimizer.stutter;
+            ImGui::BeginDisabled(!serviceConnected);
+            if (UI::Widgets::ToggleButton(
+                    T(language, s.etwActive
+                        ? Text::StutterEtwDisable
+                        : Text::StutterEtwEnable),
+                    s.etwActive, palette))
+            {
+                command.setEtw = true;
+                command.etwEnabled = !s.etwActive;
+            }
+            ImGui::EndDisabled();
+
+            ImGui::Spacing();
+
+            // Perfil experimental manual
+            const ::Optimization::EnergySnapshot& e =
+                optimizer.energy;
+            const bool lockedByAb = optimizer.ab.running;
+            ImGui::BeginDisabled(
+                !serviceConnected || lockedByAb);
+            if (UI::Widgets::ToggleButton(
+                    T(language, e.experimentalProfile
+                        ? Text::EnergyDisable
+                        : Text::EnergyEnable),
+                    e.experimentalProfile, palette))
+            {
+                command.setExperimental = true;
+                command.experimentalEnabled =
+                    !e.experimentalProfile;
+            }
+            ImGui::EndDisabled();
+            if (lockedByAb)
+            {
+                ImGui::SameLine();
+                UI::Widgets::Badge(
+                    T(language, Text::EnergyAbLocked),
+                    palette.Warning, palette);
+            }
+
+            UI::Widgets::EndCard();
+        }
+
         void RenderAb(
             const ::Optimization::OptimizerState& optimizer,
             const UI::Theme::UiPalette& palette,
@@ -1218,17 +1302,8 @@ namespace UI::Screens::Optimization
             const ::Optimization::ContainmentSnapshot& state =
                 optimizer.containment;
 
-            ImGui::BeginDisabled(!serviceConnected);
-            if (UI::Widgets::ToggleButton(
-                    T(language, state.enabled
-                        ? Text::ContainmentDisable
-                        : Text::ContainmentEnable),
-                    state.enabled, palette))
-            {
-                command.setContainment = true;
-                command.containmentEnabled = !state.enabled;
-            }
-            ImGui::EndDisabled();
+            UI::Widgets::MutedText(
+                T(language, Text::ContainmentHint), palette);
 
             ImGui::SameLine();
             UI::Widgets::Badge(
@@ -1287,17 +1362,8 @@ namespace UI::Screens::Optimization
                     palette.Warning, palette);
             }
 
-            ImGui::BeginDisabled(!serviceConnected);
-            if (UI::Widgets::ToggleButton(
-                    T(language, state.etwActive
-                        ? Text::StutterEtwDisable
-                        : Text::StutterEtwEnable),
-                    state.etwActive, palette))
-            {
-                command.setEtw = true;
-                command.etwEnabled = !state.etwActive;
-            }
-            ImGui::EndDisabled();
+            UI::Widgets::MutedText(
+                T(language, Text::StutterEtwHint), palette);
 
             if (state.available)
             {
@@ -1354,27 +1420,8 @@ namespace UI::Screens::Optimization
                     palette.Warning, palette);
             }
 
-            const bool lockedByAb = optimizer.ab.running;
-            ImGui::BeginDisabled(!serviceConnected || lockedByAb);
-            if (UI::Widgets::ToggleButton(
-                    T(language, state.experimentalProfile
-                        ? Text::EnergyDisable
-                        : Text::EnergyEnable),
-                    state.experimentalProfile, palette))
-            {
-                command.setExperimental = true;
-                command.experimentalEnabled =
-                    !state.experimentalProfile;
-            }
-            ImGui::EndDisabled();
-
-            if (lockedByAb)
-            {
-                ImGui::SameLine();
-                UI::Widgets::Badge(
-                    T(language, Text::EnergyAbLocked),
-                    palette.Warning, palette);
-            }
+            UI::Widgets::MutedText(
+                T(language, Text::EnergyHint), palette);
 
             if (state.available)
             {
@@ -1646,6 +1693,15 @@ namespace UI::Screens::Optimization
                 T(language, Text::AdvancedTitle),
                 ImGuiTreeNodeFlags_None))
         {
+            RenderAdvancedControls(
+                optimizer,
+                palette,
+                language,
+                serviceConnected,
+                command);
+
+            ImGui::Spacing();
+
             RenderAb(
                 optimizer,
                 palette,
