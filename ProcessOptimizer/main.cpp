@@ -2,8 +2,8 @@
 #include <Windows.h>
 
 #include "src/UI/Windows/Window.h"
-#include "src/Monitoring/SystemMonitor/SystemMonitor.h"
-#include "src/Core/Events/EventSystem.h"
+#include "Monitoring/SystemMonitor/SystemMonitor.h"
+#include "Core/Events/EventSystem.h"
 
 #include <iostream>
 

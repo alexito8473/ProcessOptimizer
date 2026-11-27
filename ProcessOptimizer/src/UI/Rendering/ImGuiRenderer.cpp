@@ -1,8 +1,6 @@
 #include "ImGuiRenderer.h"
-
 #include <cstdio>#include <imgui.h>
 #include "../Rendering/DirectX11/D3D11RegionTexture.h"
-
 #include <d3d11.h>
 #include <dxgi.h>
 

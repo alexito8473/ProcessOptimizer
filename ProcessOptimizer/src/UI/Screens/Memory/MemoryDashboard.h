@@ -1,8 +1,7 @@
 
 #pragma once
 
-#include "../../../Monitoring/MemoryMonitor/MemoryInfo.h"
-
+#include "Monitoring/MemoryMonitor/MemoryInfo.h"
 #include <cstddef>
 #include <span>
 

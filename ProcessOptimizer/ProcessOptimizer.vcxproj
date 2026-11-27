@@ -112,7 +112,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\vcpkg\installed\x64-windows\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\vcpkg\installed\x64-windows\include;$(SolutionDir)Shared</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -132,7 +132,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\vcpkg\installed\x64-windows\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\vcpkg\installed\x64-windows\include;$(SolutionDir)Shared</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -145,23 +145,23 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="src\IPC\PipeTransport.cpp" />
-    <ClCompile Include="src\Service\ServiceControl.cpp" />
-    <ClCompile Include="src\Monitoring\GpuMonitor\GpuCapabilities\GpuCapabilities.cpp" />
-    <ClCompile Include="src\Monitoring\GpuMonitor\GpuDriverInfo\GpuDriverInfo.cpp" />
-    <ClCompile Include="src\Monitoring\GpuMonitor\GpuEnumerator\GpuEnumerator.cpp" />
-    <ClCompile Include="src\Monitoring\GpuMonitor\GpuMemory\GpuMemory.cpp" />
-    <ClCompile Include="src\Monitoring\GpuMonitor\GpuMonitor.cpp" />
-    <ClCompile Include="src\Monitoring\GpuMonitor\GpuPciInfo\GpuPciInfo.cpp" />
-    <ClCompile Include="src\Monitoring\GpuMonitor\GpuPerformance\GpuPerformance.cpp" />
-    <ClCompile Include="src\Monitoring\GpuMonitor\GpuSensors\GpuSensors.cpp" />
-    <ClCompile Include="src\Monitoring\GpuMonitor\GpuWddmInfo\GpuWddmInfo.cpp" />
-    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessEnumerator\ProcessEnumerator.cpp" />
-    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessGpu\ProcessGpu.cpp" />
-    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessIcon\ProcessIcon.cpp" />
-    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessMonitor.cpp" />
-    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessMonitor.h" />
-    <ClCompile Include="src\Monitoring\ProcessMonitor\ProcessPerformance\ProcessPerformance.cpp" />
+    <ClCompile Include="..\Shared\IPC\PipeTransport.cpp" />
+    <ClCompile Include="..\Shared\Service\ServiceControl.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\GpuMonitor\GpuCapabilities\GpuCapabilities.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\GpuMonitor\GpuDriverInfo\GpuDriverInfo.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\GpuMonitor\GpuEnumerator\GpuEnumerator.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\GpuMonitor\GpuMemory\GpuMemory.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\GpuMonitor\GpuMonitor.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\GpuMonitor\GpuPciInfo\GpuPciInfo.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\GpuMonitor\GpuPerformance\GpuPerformance.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\GpuMonitor\GpuSensors\GpuSensors.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\GpuMonitor\GpuWddmInfo\GpuWddmInfo.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\ProcessMonitor\ProcessEnumerator\ProcessEnumerator.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\ProcessMonitor\ProcessGpu\ProcessGpu.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\ProcessMonitor\ProcessIcon\ProcessIcon.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\ProcessMonitor\ProcessMonitor.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\ProcessMonitor\ProcessMonitor.h" />
+    <ClCompile Include="..\Shared\Monitoring\ProcessMonitor\ProcessPerformance\ProcessPerformance.cpp" />
     <ClCompile Include="src\UI\Components\Charts\GraphBuffer.cpp" />
     <ClCompile Include="src\UI\Rendering\Core\RenderManager\RenderManager.cpp" />
     <ClCompile Include="src\UI\Rendering\Core\RenderRegion\RenderRegion.cpp" />
@@ -170,9 +170,9 @@
     <ClCompile Include="src\UI\Screens\Gpu\GpuDashboard.cpp" />
     <ClCompile Include="src\UI\Screens\Dashboard\OverviewDashboard.cpp" />
     <ClCompile Include="src\UI\Screens\Memory\MemoryDashboard.cpp" />
-    <ClCompile Include="src\Monitoring\CpuMonitor\CpuMonitor.cpp" />
-    <ClCompile Include="src\Monitoring\MemoryMonitor\MemoryMonitor.cpp" />
-    <ClCompile Include="src\Monitoring\SystemMonitor\SystemMonitor.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\CpuMonitor\CpuMonitor.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\MemoryMonitor\MemoryMonitor.cpp" />
+    <ClCompile Include="..\Shared\Monitoring\SystemMonitor\SystemMonitor.cpp" />
     <ClCompile Include="src\UI\Components\Charts\Chart.cpp" />
     <ClCompile Include="src\UI\Rendering\ImGuiRenderer.cpp" />
     <ClCompile Include="src\UI\Components\Widgets\Widgets.cpp" />
@@ -185,24 +185,24 @@
     <ClCompile Include="src\UI\Windows\Window.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\IPC\Protocol.h" />
-    <ClInclude Include="src\IPC\PipeTransport.h" />
+    <ClInclude Include="..\Shared\IPC\Protocol.h" />
+    <ClInclude Include="..\Shared\IPC\PipeTransport.h" />
     <ClInclude Include="src\Service\MonitorState.h" />
-    <ClInclude Include="src\Monitoring\GpuMonitor\GpuCapabilities\GpuCapabilities.h" />
-    <ClInclude Include="src\Monitoring\GpuMonitor\GpuDriverInfo\GpuDriverInfo.h" />
-    <ClInclude Include="src\Monitoring\GpuMonitor\GpuEnumerator\GpuEnumerator.h" />
-    <ClInclude Include="src\Monitoring\GpuMonitor\GpuInfo.h" />
-    <ClInclude Include="src\Monitoring\GpuMonitor\GpuMemory\GpuMemory.h" />
-    <ClInclude Include="src\Monitoring\GpuMonitor\GpuMonitor.h" />
-    <ClInclude Include="src\Monitoring\GpuMonitor\GpuPciInfo\GpuPciInfo.h" />
-    <ClInclude Include="src\Monitoring\GpuMonitor\GpuPerformance\GpuPerformance.h" />
-    <ClInclude Include="src\Monitoring\GpuMonitor\GpuSensors\GpuSensors.h" />
-    <ClInclude Include="src\Monitoring\GpuMonitor\GpuWddmInfo\GpuWddmInfo.h" />
-    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessEnumerator\ProcessEnumerator.h" />
-    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessGpu\ProcessGpu.h" />
-    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessIcon\ProcessIcon.h" />
-    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessInfo.h" />
-    <ClInclude Include="src\Monitoring\ProcessMonitor\ProcessPerformance\ProcessPerformance.h" />
+    <ClInclude Include="..\Shared\Monitoring\GpuMonitor\GpuCapabilities\GpuCapabilities.h" />
+    <ClInclude Include="..\Shared\Monitoring\GpuMonitor\GpuDriverInfo\GpuDriverInfo.h" />
+    <ClInclude Include="..\Shared\Monitoring\GpuMonitor\GpuEnumerator\GpuEnumerator.h" />
+    <ClInclude Include="..\Shared\Monitoring\GpuMonitor\GpuInfo.h" />
+    <ClInclude Include="..\Shared\Monitoring\GpuMonitor\GpuMemory\GpuMemory.h" />
+    <ClInclude Include="..\Shared\Monitoring\GpuMonitor\GpuMonitor.h" />
+    <ClInclude Include="..\Shared\Monitoring\GpuMonitor\GpuPciInfo\GpuPciInfo.h" />
+    <ClInclude Include="..\Shared\Monitoring\GpuMonitor\GpuPerformance\GpuPerformance.h" />
+    <ClInclude Include="..\Shared\Monitoring\GpuMonitor\GpuSensors\GpuSensors.h" />
+    <ClInclude Include="..\Shared\Monitoring\GpuMonitor\GpuWddmInfo\GpuWddmInfo.h" />
+    <ClInclude Include="..\Shared\Monitoring\ProcessMonitor\ProcessEnumerator\ProcessEnumerator.h" />
+    <ClInclude Include="..\Shared\Monitoring\ProcessMonitor\ProcessGpu\ProcessGpu.h" />
+    <ClInclude Include="..\Shared\Monitoring\ProcessMonitor\ProcessIcon\ProcessIcon.h" />
+    <ClInclude Include="..\Shared\Monitoring\ProcessMonitor\ProcessInfo.h" />
+    <ClInclude Include="..\Shared\Monitoring\ProcessMonitor\ProcessPerformance\ProcessPerformance.h" />
     <ClInclude Include="src\UI\Components\Charts\GraphBuffer.h" />
     <ClInclude Include="src\UI\Rendering\Core\RenderManager\RenderManager.h" />
     <ClInclude Include="src\UI\Rendering\Core\RenderRegion\RenderRegion.h" />
@@ -212,14 +212,14 @@
     <ClInclude Include="src\UI\Screens\Gpu\GpuDashboard.h" />
     <ClInclude Include="src\UI\Screens\Dashboard\OverviewDashboard.h" />
     <ClInclude Include="src\UI\Screens\Memory\MemoryDashboard.h" />
-    <ClInclude Include="src\Core\Events\Event.h" />
-    <ClInclude Include="src\Core\Events\EventSystem.h" />
-    <ClInclude Include="src\Core\Events\IEvent.h" />
-    <ClInclude Include="src\Monitoring\CpuMonitor\CpuMonitor.h" />
-    <ClInclude Include="src\Monitoring\CpuMonitor\CpuInfo.h" />
-    <ClInclude Include="src\Monitoring\MemoryMonitor\MemoryInfo.h" />
-    <ClInclude Include="src\Monitoring\MemoryMonitor\MemoryMonitor.h" />
-    <ClInclude Include="src\Monitoring\SystemMonitor\SystemMonitor.h" />
+    <ClInclude Include="..\Shared\Core\Events\Event.h" />
+    <ClInclude Include="..\Shared\Core\Events\EventSystem.h" />
+    <ClInclude Include="..\Shared\Core\Events\IEvent.h" />
+    <ClInclude Include="..\Shared\Monitoring\CpuMonitor\CpuMonitor.h" />
+    <ClInclude Include="..\Shared\Monitoring\CpuMonitor\CpuInfo.h" />
+    <ClInclude Include="..\Shared\Monitoring\MemoryMonitor\MemoryInfo.h" />
+    <ClInclude Include="..\Shared\Monitoring\MemoryMonitor\MemoryMonitor.h" />
+    <ClInclude Include="..\Shared\Monitoring\SystemMonitor\SystemMonitor.h" />
     <ClInclude Include="src\UI\Components\Charts\Chart.h" />
     <ClInclude Include="src\UI\Rendering\ImGuiRenderer.h" />
     <ClInclude Include="src\UI\Components\Widgets\Widgets.h" />

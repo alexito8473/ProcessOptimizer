@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../RenderRegion/RenderRegion.h"
-
 #include <cstdint>
 #include <string>
 #include <vector>

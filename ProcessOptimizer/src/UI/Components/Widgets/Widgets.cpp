@@ -1,5 +1,4 @@
 #include "Widgets.h"
-
 #include <algorithm>
 #include <string>
 

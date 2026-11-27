@@ -6,10 +6,10 @@
 #include <string>
 #include <vector>
 
-#include "../../../Monitoring/CpuMonitor/CpuInfo.h"
-#include "../../../Monitoring/GpuMonitor/GpuInfo.h"
-#include "../../../Monitoring/MemoryMonitor/MemoryInfo.h"
-#include "../../../Monitoring/ProcessMonitor/ProcessInfo.h"
+#include "Monitoring/CpuMonitor/CpuInfo.h"
+#include "Monitoring/GpuMonitor/GpuInfo.h"
+#include "Monitoring/MemoryMonitor/MemoryInfo.h"
+#include "Monitoring/ProcessMonitor/ProcessInfo.h"
 #include "../../Localization/Localization.h"
 #include "../../Theme/Theme.h"
 

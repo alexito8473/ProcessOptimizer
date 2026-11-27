@@ -1,5 +1,4 @@
 #include "ImGuiRegionRenderer.h"
-
 #include <algorithm>
 
 #include "implot.h"

@@ -1,14 +1,12 @@
 #include "SettingsScreen.h"
-
 #include <imgui.h>
 
 #include <array>
 
 #include "../../Components/Widgets/Widgets.h"
-#include "../../../IPC/PipeTransport.h"
-#include "../../../IPC/Protocol.h"
-#include "../../../Service/ServiceControl.h"
-
+#include "IPC/PipeTransport.h"
+#include "IPC/Protocol.h"
+#include "Service/ServiceControl.h"
 namespace UI::Screens::Settings
 {
     namespace

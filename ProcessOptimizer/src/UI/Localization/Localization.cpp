@@ -1,5 +1,4 @@
 #include "Localization.h"
-
 #include <array>
 
 namespace UI::Localization

@@ -7,7 +7,7 @@
 #include <cstddef>
 #include <span>
 
-#include "../../../Monitoring/CpuMonitor/CpuInfo.h"
+#include "Monitoring/CpuMonitor/CpuInfo.h"
 #include "../../Localization/Localization.h"
 #include "../../Theme/Theme.h"
 

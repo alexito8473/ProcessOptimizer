@@ -1,7 +1,6 @@
 
 #pragma once
-#include "../../../Monitoring/ProcessMonitor/ProcessInfo.h"
-
+#include "Monitoring/ProcessMonitor/ProcessInfo.h"
 
 
 class ProcessDashboard

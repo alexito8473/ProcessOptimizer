@@ -1,6 +1,5 @@
 
 #include "Chart.h"
-
 #include <imgui.h>
 #include <implot.h>
 

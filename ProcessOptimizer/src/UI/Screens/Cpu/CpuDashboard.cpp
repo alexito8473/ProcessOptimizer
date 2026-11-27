@@ -1,6 +1,5 @@
 
 #include "CpuDashboard.h"
-
 #include <imgui.h>
 #include <implot.h>
 

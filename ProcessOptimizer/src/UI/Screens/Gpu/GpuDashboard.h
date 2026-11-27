@@ -4,8 +4,7 @@
 #include <array>
 #include <cstddef>
 
-#include "../../../Monitoring/GpuMonitor/GpuInfo.h"
-
+#include "Monitoring/GpuMonitor/GpuInfo.h"
 namespace UI::Dashboard::Gpu
 {
     inline constexpr std::size_t GpuHistorySize = 120;

@@ -3,9 +3,8 @@
 #include "../../Localization/Localization.h"
 #include "../../Theme/Theme.h"
 
-#include "../../../IPC/PipeTransport.h"
-#include "../../../Optimization/OptimizationTypes.h"
-
+#include "IPC/PipeTransport.h"
+#include "Optimization/OptimizationTypes.h"
 namespace UI::Screens::Optimization
 {
     struct OptimizationCommand

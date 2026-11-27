@@ -1,9 +1,7 @@
 #include "OptimizationScreen.h"
-
 #include <imgui.h>
 
 #include "../../Components/Widgets/Widgets.h"
-
 #include <algorithm>
 #include <cstdio>
 #include <string>
