@@ -145,6 +145,30 @@ namespace Optimization
         Publish();
     }
 
+    void BackgroundContainment::SetGeneralMode(bool enabled)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (generalMode_ == enabled)
+                return;
+            generalMode_ = enabled;
+            if (!enabled)
+            {
+                for (const auto& entry : backups_)
+                    Restore(entry.first, entry.second);
+                backups_.clear();
+                contained_ = 0;
+                quietTicks_ = 0;
+                status_ = "Modo general desactivado";
+            }
+            else
+            {
+                status_ = "Modo general: contencion conservadora activa";
+            }
+        }
+        Publish();
+    }
+
     void BackgroundContainment::OnProcesses(
         const ProcessSnapshot& snapshot,
         const StutterSnapshot& stutter,
@@ -161,7 +185,7 @@ namespace Optimization
             // las dos y la contencion quedaba bloqueada en muchos equipos.
             const bool identityValid =
                 foregroundPid != 0 || gamePid != 0;
-            if (!enabled_ || !(abValidated_ || safeMode_) || !identityValid)
+            if (!enabled_ || !(abValidated_ || safeMode_ || generalMode_) || !identityValid)
             {
                 if (!backups_.empty())
                 {
@@ -172,7 +196,7 @@ namespace Optimization
                 }
                 status_ = !enabled_
                     ? "Desactivado: todo restaurado"
-                    : !(abValidated_ || safeMode_)
+                    : !(abValidated_ || safeMode_ || generalMode_)
                         ? "A/B pendiente: sin intervencion"
                         : "Sin juego en primer plano: sin intervencion";
                 PublishLocked();
@@ -209,13 +233,15 @@ namespace Optimization
             const std::uint64_t nowMs = GetTickCount64();
             std::set<InstanceKey> wanted;
 
+            const double cpuThreshold =
+                generalMode_ ? 8.0 : 2.0;
             for (const auto& process : snapshot.processes)
             {
                 if (process.processId == 0 ||
                     process.processId == foregroundPid ||
                     process.processId == gamePid ||
                     IsProtected(process.name) ||
-                    process.cpuUsagePercent < 2.0)
+                    process.cpuUsagePercent < cpuThreshold)
                 {
                     continue;
                 }
@@ -339,47 +365,53 @@ namespace Optimization
         backup.name = process.name;
         bool applied = false;
 
-        PROCESS_POWER_THROTTLING_STATE power{};
-        power.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-        if (GetProcessInformation(
-                handle, ProcessPowerThrottling,
-                &power, sizeof(power)))
+        if (!generalMode_)
         {
-            backup.hasPower = true;
-            backup.power = power;
-
-            PROCESS_POWER_THROTTLING_STATE throttled{};
-            throttled.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-            throttled.ControlMask =
-                PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
-            throttled.StateMask =
-                PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
-            if (SetProcessInformation(
+            PROCESS_POWER_THROTTLING_STATE power{};
+            power.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+            if (GetProcessInformation(
                     handle, ProcessPowerThrottling,
-                    &throttled, sizeof(throttled)))
+                    &power, sizeof(power)))
             {
-                applied = true;
+                backup.hasPower = true;
+                backup.power = power;
+
+                PROCESS_POWER_THROTTLING_STATE throttled{};
+                throttled.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+                throttled.ControlMask =
+                    PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+                throttled.StateMask =
+                    PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+                if (SetProcessInformation(
+                        handle, ProcessPowerThrottling,
+                        &throttled, sizeof(throttled)))
+                {
+                    applied = true;
+                }
             }
         }
         // Si no se pudo leer/escribir power throttling (proceso protegido
         // o version antigua), se sigue con las demas mitigaciones; la
         // accion sigue siendo reversible para las que si se aplicaron.
 
-        MEMORY_PRIORITY_INFORMATION memory{};
-        memory.MemoryPriority = MEMORY_PRIORITY_NORMAL;
-        if (GetProcessInformation(
-                handle, ProcessMemoryPriority,
-                &memory, sizeof(memory)))
+        if (!generalMode_)
         {
-            backup.hasMemory = true;
-            backup.memoryPriority = memory.MemoryPriority;
-            MEMORY_PRIORITY_INFORMATION low{};
-            low.MemoryPriority = MEMORY_PRIORITY_LOW;
-            if (SetProcessInformation(
+            MEMORY_PRIORITY_INFORMATION memory{};
+            memory.MemoryPriority = MEMORY_PRIORITY_NORMAL;
+            if (GetProcessInformation(
                     handle, ProcessMemoryPriority,
-                    &low, sizeof(low)))
+                    &memory, sizeof(memory)))
             {
-                applied = true;
+                backup.hasMemory = true;
+                backup.memoryPriority = memory.MemoryPriority;
+                MEMORY_PRIORITY_INFORMATION low{};
+                low.MemoryPriority = MEMORY_PRIORITY_LOW;
+                if (SetProcessInformation(
+                        handle, ProcessMemoryPriority,
+                        &low, sizeof(low)))
+                {
+                    applied = true;
+                }
             }
         }
 
@@ -399,24 +431,27 @@ namespace Optimization
             }
         }
 
-        std::vector<DWORD> coldSets;
-        if (BuildColdCpuSets(topology, coldSets))
+        if (!generalMode_)
         {
-            DWORD count = 0;
-            GetProcessDefaultCpuSets(handle, nullptr, 0, &count);
-            if (count > 0)
+            std::vector<DWORD> coldSets;
+            if (BuildColdCpuSets(topology, coldSets))
             {
-                std::vector<DWORD> previous(count);
-                if (GetProcessDefaultCpuSets(
-                        handle, previous.data(), count, &count))
+                DWORD count = 0;
+                GetProcessDefaultCpuSets(handle, nullptr, 0, &count);
+                if (count > 0)
                 {
-                    backup.hasCpuSets = true;
-                    backup.cpuSets = previous;
-                    if (SetProcessDefaultCpuSets(
-                            handle, coldSets.data(),
-                            static_cast<DWORD>(coldSets.size())))
+                    std::vector<DWORD> previous(count);
+                    if (GetProcessDefaultCpuSets(
+                            handle, previous.data(), count, &count))
                     {
-                        applied = true;
+                        backup.hasCpuSets = true;
+                        backup.cpuSets = previous;
+                        if (SetProcessDefaultCpuSets(
+                                handle, coldSets.data(),
+                                static_cast<DWORD>(coldSets.size())))
+                        {
+                            applied = true;
+                        }
                     }
                 }
             }

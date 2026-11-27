@@ -2,9 +2,31 @@
 #include <algorithm>
 #include <chrono>
 #include <fstream>
+#include <sstream>
 #include <ctime>
 #include <cstdio>
 #include <utility>
+
+namespace
+{
+    std::string WideToUtf8Local(const std::wstring& value)
+    {
+        if (value.empty())
+            return {};
+        const int size = WideCharToMultiByte(
+            CP_UTF8, 0, value.c_str(), -1,
+            nullptr, 0, nullptr, nullptr);
+        if (size <= 1)
+            return {};
+        std::string result(
+            static_cast<std::size_t>(size), '\0');
+        WideCharToMultiByte(
+            CP_UTF8, 0, value.c_str(), -1,
+            result.data(), size, nullptr, nullptr);
+        result.pop_back();
+        return result;
+    }
+}
 
 namespace Service
 {
@@ -297,7 +319,10 @@ namespace Service
                         if (ab_)
                             ab_->Stop();
                         if (containment_)
+                        {
                             containment_->SetSafeMode(false);
+                            containment_->SetGeneralMode(false);
+                        }
                         return true;
                     }
 
@@ -667,7 +692,43 @@ namespace Service
                     orchestrator_->HasBenchmarkProfile() &&
                     frameProbe_)
                 {
-                    ab_->Start(20, true, frameProbe_.get(),
+                    int duration = 20;
+                    std::string gameName;
+                    for (const auto& proc : processes.processes)
+                    {
+                        if (proc.processId == game)
+                        {
+                            gameName = WideToUtf8Local(proc.name);
+                            break;
+                        }
+                    }
+                    std::ifstream cacheFile(
+                        "C:\\ProgramData\\ProcessOptimizer\\"
+                        "optimization-cache.txt");
+                    std::string line;
+                    bool cacheHit = false;
+                    while (std::getline(cacheFile, line))
+                    {
+                        std::istringstream iss(line);
+                        std::string topo, gname;
+                        int kept = 0;
+                        if (iss >> topo >> gname >> kept)
+                        {
+                            std::string topoKey =
+                                "topo" +
+                                std::to_string(
+                                    topology.processors.size());
+                            if (topo == topoKey &&
+                                gname == gameName)
+                            {
+                                cacheHit = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (cacheHit)
+                        duration = 8;
+                    ab_->Start(duration, true, frameProbe_.get(),
                                energy_.get());
                 }
 
@@ -693,11 +754,47 @@ namespace Service
                         containment_->SetSafeMode(false);
                     if (containment_)
                         containment_->SetAbValidated(abState2.kept);
+                    std::string gameName;
+                    for (const auto& proc : processes.processes)
+                    {
+                        if (proc.processId == game)
+                        {
+                            gameName = WideToUtf8Local(proc.name);
+                            break;
+                        }
+                    }
+                    if (!gameName.empty())
+                    {
+                        std::ofstream cacheFile(
+                            "C:\\ProgramData\\ProcessOptimizer\\"
+                            "optimization-cache.txt",
+                            std::ios::app);
+                        if (cacheFile)
+                        {
+                            cacheFile
+                                << "topo"
+                                << topology.processors.size()
+                                << " " << gameName << " "
+                                << (abState2.kept ? 1 : 0)
+                                << "\n";
+                        }
+                    }
                 }
             }
 
             if (containment_)
             {
+                const bool balancedActive =
+                    orchestrator_->State().enabled &&
+                    orchestrator_->State().mode !=
+                        Optimization::OptimizerMode::Off;
+                const bool hasGame = game != 0;
+                containment_->SetGeneralMode(
+                    balancedActive && !hasGame &&
+                    foreground != 0);
+                if (hasGame)
+                    containment_->SetGeneralMode(false);
+
                 const auto abState = ab_
                     ? ab_->Snapshot()
                     : Optimization::AbResult{};

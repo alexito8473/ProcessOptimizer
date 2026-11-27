@@ -37,6 +37,7 @@ namespace Optimization
         // Modo seguro para juegos sin DXGI (p. ej. OpenGL): la contencion
         // puede actuar con evidencia PDH, sin plan de energia ni GPU.
         void SetSafeMode(bool enabled);
+        void SetGeneralMode(bool enabled);
         void OnProcesses(
             const ProcessSnapshot& snapshot,
             const StutterSnapshot& stutter,
@@ -90,6 +91,7 @@ namespace Optimization
         bool enabled_ = false;
         bool abValidated_ = false;
         bool safeMode_ = false;
+        bool generalMode_ = false;
         std::uint64_t lastRestoreMs_ = 0;
         std::uint64_t lastContainMs_ = 0;
         int quietTicks_ = 0;
