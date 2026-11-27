@@ -272,6 +272,8 @@ namespace Service
                         autoCalibrateRequested_.store(false);
                         if (ab_)
                             ab_->Stop();
+                        if (containment_)
+                            containment_->SetSafeMode(false);
                         return true;
                     }
 
@@ -644,8 +646,30 @@ namespace Service
                     ab_->Start(20, true, frameProbe_.get(),
                                energy_.get());
                 }
-                if (ab_->Snapshot().completed)
+
+                const auto abState2 = ab_->Snapshot();
+                // Deteccion de juegos sin DXGI (p. ej. OpenGL/Minecraft):
+                // si la linea base no acumula muestras, entramos en modo
+                // seguro en vez de esperar indefinidamente.
+                if (abState2.running &&
+                    abState2.baseline.sampleCount < 10 &&
+                    abState2.progressPercent >= 40)
+                {
+                    ab_->Stop();
+                    if (containment_)
+                        containment_->SetSafeMode(true);
+                    orchestrator_->SetStatusMessage(
+                        "Balanceado: modo seguro (sin medicion DXGI)");
                     autoCalibrateRequested_.store(false);
+                }
+                else if (abState2.completed)
+                {
+                    autoCalibrateRequested_.store(false);
+                    if (containment_)
+                        containment_->SetSafeMode(false);
+                    if (containment_)
+                        containment_->SetAbValidated(abState2.kept);
+                }
             }
 
             if (containment_)

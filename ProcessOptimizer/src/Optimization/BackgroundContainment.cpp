@@ -114,6 +114,32 @@ namespace Optimization
         Publish();
     }
 
+    void BackgroundContainment::SetSafeMode(bool enabled)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (safeMode_ == enabled)
+                return;
+
+            safeMode_ = enabled;
+            if (!enabled)
+            {
+                for (const auto& entry : backups_)
+                    Restore(entry.first, entry.second);
+                backups_.clear();
+                contained_ = 0;
+                quietTicks_ = 0;
+                status_ = "Modo seguro desactivado";
+            }
+            else
+            {
+                status_ =
+                    "Modo seguro (sin DXGI): contencion solo con evidencia";
+            }
+        }
+        Publish();
+    }
+
     void BackgroundContainment::OnProcesses(
         const ProcessSnapshot& snapshot,
         const StutterSnapshot& stutter,
@@ -130,7 +156,7 @@ namespace Optimization
             // las dos y la contencion quedaba bloqueada en muchos equipos.
             const bool identityValid =
                 foregroundPid != 0 || gamePid != 0;
-            if (!enabled_ || !abValidated_ || !identityValid)
+            if (!enabled_ || !(abValidated_ || safeMode_) || !identityValid)
             {
                 if (!backups_.empty())
                 {
@@ -141,7 +167,7 @@ namespace Optimization
                 }
                 status_ = !enabled_
                     ? "Desactivado: todo restaurado"
-                    : !abValidated_
+                    : !(abValidated_ || safeMode_)
                         ? "A/B pendiente: sin intervencion"
                         : "Sin juego en primer plano: sin intervencion";
                 PublishLocked();
@@ -208,6 +234,10 @@ namespace Optimization
                 });
             if (candidates.size() > 2)
                 candidates.resize(2);
+            // En modo seguro (sin DXGI) seamos mas conservadores:
+            // como maximo un proceso contenido.
+            if (safeMode_ && candidates.size() > 1)
+                candidates.resize(1);
 
             wanted.clear();
             for (const ProcessInfo* process : candidates)

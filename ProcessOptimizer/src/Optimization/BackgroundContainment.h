@@ -36,6 +36,9 @@ namespace Optimization
         void SetEnabled(bool enabled);
         // Solo despues de un A/B positivo conservado y con el perfil activo.
         void SetAbValidated(bool validated);
+        // Modo seguro para juegos sin DXGI (p. ej. OpenGL): la contencion
+        // puede actuar con evidencia PDH, sin plan de energia ni GPU.
+        void SetSafeMode(bool enabled);
         void OnProcesses(
             const ProcessSnapshot& snapshot,
             const StutterSnapshot& stutter,
@@ -87,6 +90,7 @@ namespace Optimization
 
         bool enabled_ = false;
         bool abValidated_ = false;
+        bool safeMode_ = false;
         int quietTicks_ = 0;
         std::uint32_t contained_ = 0;
         std::uint32_t reverted_ = 0;
