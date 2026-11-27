@@ -203,7 +203,7 @@ namespace UI::Screens::Optimization
                     settings.optimizerMode = 0;
                     command.changed = true;
                 }
-                else if (profileReady)
+                else
                 {
                     settings.optimizerEnabled = true;
                     if (settings.optimizerMode == 0)
@@ -1590,23 +1590,6 @@ namespace UI::Screens::Optimization
             command,
             serviceIssue);
 
-        UI::Widgets::SectionTitle(
-            T(language, Text::AdvancedTitle),
-            nullptr, palette);
-
-        if (ImGui::CollapsingHeader(
-                T(language, Text::AdvancedTitle),
-                ImGuiTreeNodeFlags_None))
-        {
-            RenderAb(
-                optimizer,
-                palette,
-                language,
-                serviceConnected,
-                command,
-                serviceIssue);
-        }
-
         RenderContainment(
             optimizer,
             palette,
@@ -1654,6 +1637,23 @@ namespace UI::Screens::Optimization
             hasOptimizer ? optimizer : ::Optimization::OptimizerState{},
             palette,
             language);
+
+        UI::Widgets::SectionTitle(
+            T(language, Text::AdvancedTitle),
+            nullptr, palette);
+
+        if (ImGui::CollapsingHeader(
+                T(language, Text::AdvancedTitle),
+                ImGuiTreeNodeFlags_None))
+        {
+            RenderAb(
+                optimizer,
+                palette,
+                language,
+                serviceConnected,
+                command,
+                serviceIssue);
+        }
 
         ImGui::PopStyleVar();
 
