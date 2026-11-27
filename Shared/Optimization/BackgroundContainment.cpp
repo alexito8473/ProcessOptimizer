@@ -235,13 +235,15 @@ namespace Optimization
 
             const double cpuThreshold =
                 generalMode_ ? 8.0 : 2.0;
+            const double gpuThreshold = 5.0;
             for (const auto& process : snapshot.processes)
             {
                 if (process.processId == 0 ||
                     process.processId == foregroundPid ||
                     process.processId == gamePid ||
                     IsProtected(process.name) ||
-                    process.cpuUsagePercent < cpuThreshold)
+                    (process.cpuUsagePercent < cpuThreshold &&
+                     process.gpuUsagePercent < gpuThreshold))
                 {
                     continue;
                 }
@@ -472,7 +474,8 @@ namespace Optimization
             entry.target = TargetText(key.processId, key.startTime, backup.name);
             entry.detail =
                 "EcoQoS + prioridad baja (ProBalance) + "
-                "memoria baja + CPU Sets frios si aplica";
+                "memoria baja + CPU Sets frios si aplica; "
+                "GPU-aware si uso GPU alto";
             auditPublisher_(entry);
         }
         return true;
