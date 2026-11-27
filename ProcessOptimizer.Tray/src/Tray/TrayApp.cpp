@@ -773,17 +773,21 @@ namespace Tray
 
             if (connected_)
             {
-                wchar_t buffer[128]{};
+                wchar_t buffer[192]{};
                 swprintf_s(
                     buffer,
-                    L"CPU %.0f%% | RAM %.0f%% | GPU %.0f%%",
+                    L"CPU %.0f%% | RAM %.0f%% | GPU %.0f%% | Opt %s",
                     state_.hasCpu
                         ? state_.cpu.totalUsagePercent
                         : 0.0,
                     state_.hasMemory
                         ? state_.memory.usagePercent
                         : 0.0,
-                    MaxGpuUsage(state_));
+                    MaxGpuUsage(state_),
+                    (state_.hasOptimizer &&
+                     state_.optimizer.enabled)
+                        ? L"ON"
+                        : L"OFF");
                 tooltip = buffer;
             }
             else

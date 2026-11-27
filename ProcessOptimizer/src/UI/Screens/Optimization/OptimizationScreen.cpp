@@ -1141,6 +1141,50 @@ namespace UI::Screens::Optimization
             UI::Widgets::EndCard();
         }
 
+        void RenderGpuOptimizer(
+            const ::Optimization::OptimizerState& optimizer,
+            const UI::Theme::UiPalette& palette,
+            UI::Localization::Language language)
+        {
+            UI::Widgets::SectionTitle(
+                "GPU Optimizer", nullptr, palette);
+            UI::Widgets::BeginCard(
+                "OptimizerGpu", 0.0f, palette);
+
+            const ::Optimization::ProcessPlan* topGpu = nullptr;
+            for (const ::Optimization::ProcessPlan& plan :
+                 optimizer.processes)
+            {
+                if (topGpu == nullptr ||
+                    plan.gpuUsagePercent >
+                        topGpu->gpuUsagePercent)
+                {
+                    topGpu = &plan;
+                }
+            }
+
+            if (topGpu != nullptr &&
+                topGpu->gpuUsagePercent > 0.0)
+            {
+                ImGui::Text(
+                    "Top GPU: %s (%.1f%%)",
+                    ToUtf8(topGpu->name).c_str(),
+                    topGpu->gpuUsagePercent);
+            }
+            else
+            {
+                UI::Widgets::MutedText(
+                    "Sin proceso GPU destacado.", palette);
+            }
+
+            UI::Widgets::MutedText(
+                "Temperatura: no disponible (requiere "
+                "adaptador NVIDIA/AMD/Intel).",
+                palette);
+
+            UI::Widgets::EndCard();
+        }
+
         void RenderAb(
             const ::Optimization::OptimizerState& optimizer,
             const UI::Theme::UiPalette& palette,
@@ -1657,6 +1701,11 @@ namespace UI::Screens::Optimization
             language,
             serviceConnected,
             command);
+
+        RenderGpuOptimizer(
+            optimizer,
+            palette,
+            language);
 
         RenderDiagnostics(optimizer, palette, language);
 
