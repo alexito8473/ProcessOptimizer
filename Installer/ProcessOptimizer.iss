@@ -1,6 +1,6 @@
 [Setup]
 AppName=ProcessOptimizer
-AppVersion=1.2.0
+AppVersion=1.3.0
 DefaultDirName={autopf}\ProcessOptimizer
 OutputDir=Output
 OutputBaseFilename=ProcessOptimizer-Setup
@@ -19,6 +19,9 @@ Source: "..\x64\Release\ProcessOptimizer.Tray.exe"; DestDir: "{app}"; Flags: ign
 Source: "..\ProcessOptimizer\Assets\logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\ProcessOptimizer\Assets\logo.png"; DestDir: "{app}"; Flags: ignoreversion
 Source: "VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+
+[InstallDelete]
+Type: files; Name: "{app}\ProcessOptimizer.exe"
 
 [Icons]
 Name: "{autoprograms}\ProcessOptimizer"; Filename: "{app}\ProcessOptimizer.UI.exe"; IconFilename: "{app}\logo.ico"
